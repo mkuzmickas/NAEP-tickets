@@ -62,14 +62,17 @@ export async function getAllTickets(): Promise<TicketRow[]> {
       id, po_id, ticket_number, ticket_date, source_type, is_master,
       face_value, computed_total, reconciled, status,
       pdf_storage_path, markup_notes, created_at, created_by,
-      service_pos:po_id ( po_number, vendor_display_name, scope ),
+      service_pos ( po_number, vendor_display_name, scope ),
       line_items ( id, ticket_id, category, description, quantity, unit, rate,
                    source_amount, markup_percent, final_amount, sort_order, created_at )
     `
     )
     .order('ticket_date', { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error('getAllTickets failed:', error);
+    throw new Error(`Failed to fetch tickets: ${error.message}`);
+  }
 
   return (data as unknown as RawTicket[]).map((t) => ({
     id: t.id,
