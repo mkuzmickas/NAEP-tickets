@@ -1,13 +1,21 @@
-export default function TicketsPage() {
+import { getAllTickets } from '@/lib/tickets';
+import { TicketTable } from '@/components/tickets/TicketTable';
+
+export const revalidate = 0;
+
+export default async function TicketsPage() {
+  const tickets = await getAllTickets();
+
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Logged Tickets</h1>
-        <p className="text-sm text-enbridge-black/60">All field tickets, BOLs, and master tickets.</p>
+        <p className="text-sm text-enbridge-black/60">
+          {tickets.length} {tickets.length === 1 ? 'ticket' : 'tickets'} on file · most recent first
+        </p>
       </header>
-      <div className="rounded-lg border border-dashed border-black/15 bg-white p-12 text-center text-enbridge-black/50">
-        Coming in step 3.
-      </div>
+
+      <TicketTable initialTickets={tickets} />
     </div>
   );
 }

@@ -68,3 +68,10 @@ export type ActivePoSummary = {
   pct_used: number;
   ticket_count: number;
 };
+
+export type TicketRow = Ticket & {
+  po_number: string;
+  vendor_display_name: string;
+  scope: string | null;
+  line_items: LineItem[];
+};
