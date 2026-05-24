@@ -43,6 +43,21 @@ export function normalize(parsed: ParsedTicket): {
       break;
   }
 
+  // Defense in depth: Albright invoices have Energetic hydrovac BOLs attached
+  // as backup on pages 2+ of the PDF. Those BOLs belong to Energetic's own
+  // tickets (already on file), NOT to the Albright invoice. If the parser
+  // still picked them up despite the prompt instructions, strip them here
+  // before the dedupe check flags them as collisions.
+  if (
+    parsed.format_hint === 'albright' &&
+    (parsed.is_master || parsed.bol_numbers.length > 0)
+  ) {
+    warnings.push(
+      `Albright invoices do not consolidate BOLs — the ${parsed.bol_numbers.length} BOL number(s) visible on backup pages belong to Energetic's hydrovac tickets and were stripped from this Albright ticket.`
+    );
+    parsed = { ...parsed, is_master: false, bol_numbers: [] };
+  }
+
   // Deduplicate bol_numbers — if the parser listed the same BOL twice within
   // one master ticket's own list, treat it as a parser error: silently keep
   // only the first occurrence and warn the user. Without this, the second

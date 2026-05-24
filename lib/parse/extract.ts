@@ -44,7 +44,7 @@ Vendor format hints (use these to decide line-item granularity):
 - goldenbase: per-resource lines — one line per tradesman or equipment unit. Some materials/LOA charges carry +10% markup; split source vs final and set markup_percent=10.
 - vector: per-resource lines for survey labour and equipment.
 - energetic: hydrovac format — exactly one Equipment line for truck hours (Fuel Surcharge is rolled INTO the equipment total, not a separate line) and one Labour line for swamper hours.
-- albright: usually a single Materials line per ticket (waste fluid disposal — vac truck load).
+- albright: the Albright invoice is on PAGE 1 ONLY — usually a single Materials line per ticket (waste fluid disposal — vac truck load). Pages 2+ are Energetic hydrovac BOLs attached as backup proof of what was disposed. IGNORE every page after page 1 when extracting line_items and face_value. Albright invoices are NEVER master tickets and DO NOT consolidate BOLs — the BOL numbers visible on the backup pages belong to Energetic and are already tracked in their own ticket. Always return is_master=false and bol_numbers=[] for Albright, no matter what BOL numbers appear on the backup pages.
 - generic: fall back to category buckets.
 
 Master tickets:
