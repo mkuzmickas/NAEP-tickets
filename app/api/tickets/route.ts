@@ -54,6 +54,26 @@ export async function POST(req: Request) {
     );
   }
 
+  // Internal BOL dedup check (defense in depth — normalize() already
+  // dedupes during parse, but the user may have edited the field manually
+  // and re-introduced a duplicate before clicking Commit).
+  if (parsed.is_master && parsed.bol_numbers.length > 0) {
+    const seen = new Set<string>();
+    const internalDups: string[] = [];
+    for (const b of parsed.bol_numbers) {
+      if (seen.has(b)) internalDups.push(b);
+      else seen.add(b);
+    }
+    if (internalDups.length > 0) {
+      return NextResponse.json(
+        {
+          error: `BOL number(s) appear more than once within this ticket's own list: ${Array.from(new Set(internalDups)).join(', ')}. Remove the duplicates before committing.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   // Insert ticket
   const sourceType = parsed.is_master ? 'master_ticket' : 'field_ticket';
   const { data: ticket, error: insertErr } = await supabase
@@ -121,7 +141,7 @@ export async function POST(req: Request) {
       if (bolErr.code === '23505') {
         return NextResponse.json(
           {
-            error: `One or more BOL numbers are already on file: ${bolErr.message}`,
+            error: `Cannot register one or more BOL numbers — another ticket on file has already claimed them (true external duplicate, not an internal one). ${bolErr.message}`,
           },
           { status: 409 }
         );

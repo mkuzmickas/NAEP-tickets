@@ -43,8 +43,39 @@ export function normalize(parsed: ParsedTicket): {
       break;
   }
 
+  // Deduplicate bol_numbers — if the parser listed the same BOL twice within
+  // one master ticket's own list, treat it as a parser error: silently keep
+  // only the first occurrence and warn the user. Without this, the second
+  // copy passes checkDuplicates (it's not in the DB), then trips the unique
+  // constraint at commit and surfaces as a misleading "already on file" 409.
+  let bol_numbers = parsed.bol_numbers;
+  if (parsed.is_master && bol_numbers.length > 0) {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    const duplicates: string[] = [];
+    for (const b of bol_numbers) {
+      if (seen.has(b)) {
+        duplicates.push(b);
+      } else {
+        seen.add(b);
+        unique.push(b);
+      }
+    }
+    if (duplicates.length > 0) {
+      warnings.push(
+        `BOL number(s) appeared multiple times within this ticket's own list — auto-deduplicated: ${Array.from(new Set(duplicates)).join(', ')}. Likely a parser error; the cleaned list is below.`
+      );
+      bol_numbers = unique;
+    }
+  }
+
   return {
-    ticket: { ...parsed, line_items: items, face_value: round2(parsed.face_value) },
+    ticket: {
+      ...parsed,
+      line_items: items,
+      face_value: round2(parsed.face_value),
+      bol_numbers,
+    },
     warnings,
   };
 }
