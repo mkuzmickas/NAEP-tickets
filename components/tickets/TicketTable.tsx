@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { formatMoney } from '@/lib/money';
 import type { LineItem, LineItemCategory, TicketRow } from '@/types/database';
 
@@ -19,6 +20,18 @@ function categoryTotals(items: LineItem[]) {
   const r = { labour: 0, equipment: 0, materials: 0, loa_other: 0 };
   for (const li of items) r[li.category] += li.final_amount;
   return r;
+}
+
+async function viewPdf(path: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase.storage
+    .from('ticket-pdfs')
+    .createSignedUrl(path, 300);
+  if (error || !data) {
+    alert(`Could not generate PDF link: ${error?.message ?? 'unknown error'}`);
+    return;
+  }
+  window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
 }
 
 export function TicketTable({ initialTickets }: { initialTickets: TicketRow[] }) {
@@ -369,7 +382,15 @@ function TicketRowFragment({
         <td className="px-4 py-3 align-top text-right tabular-nums font-semibold">
           {formatMoney(ticket.face_value)}
         </td>
-        <td className="px-4 py-3 align-top text-right">
+        <td className="px-4 py-3 align-top text-right whitespace-nowrap">
+          {ticket.pdf_storage_path && (
+            <button
+              onClick={() => viewPdf(ticket.pdf_storage_path!)}
+              className="text-xs text-enbridge-black/70 hover:text-enbridge-black underline mr-3"
+            >
+              View PDF
+            </button>
+          )}
           <button onClick={onDelete} className="text-xs text-red-700 hover:text-red-900 underline">
             Delete
           </button>
