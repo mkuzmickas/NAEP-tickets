@@ -32,6 +32,17 @@ export type ParsedTicket = {
   markup_notes?: string;
 };
 
+export type ExistingTicketSnapshot = {
+  ticket_id: string;
+  ticket_number: string;
+  ticket_date: string;
+  po_number: string;
+  face_value: number;
+  is_master: boolean;
+  bol_numbers: string[];
+  line_items: ParsedLineItem[];
+};
+
 export type DuplicateInfo = {
   ticket_number_collides_with?: 'ticket' | 'bol_registry';
   ticket_existing?: {
@@ -39,6 +50,9 @@ export type DuplicateInfo = {
     ticket_date: string;
     po_number: string;
   };
+  // Full snapshot of the existing ticket when ticket_number_collides_with === 'ticket'.
+  // Used by the client to diff parsed-vs-existing and offer Replace for revisions.
+  existing_ticket_snapshot?: ExistingTicketSnapshot;
   bol_collisions: Array<{
     bol_number: string;
     found_in: 'ticket' | 'bol_registry';

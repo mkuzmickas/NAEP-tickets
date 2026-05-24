@@ -16,6 +16,7 @@ type Item = {
   storagePath?: string;
   result?: ParseResult;
   errorMsg?: string;
+  replaced?: boolean;
 };
 
 function uid() {
@@ -99,20 +100,29 @@ export function UploadFlow() {
     }
   }
 
-  async function commitItem(localId: string, finalResult: ParseResult) {
+  async function commitItem(
+    localId: string,
+    finalResult: ParseResult,
+    replace = false
+  ) {
     const res = await fetch('/api/tickets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         storage_path: finalResult.storage_path,
         parsed: finalResult.parsed,
+        replace_existing: replace,
       }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error ?? `Commit failed (${res.status})`);
     }
-    patchItem(localId, { status: 'committed', result: finalResult });
+    patchItem(localId, {
+      status: 'committed',
+      result: finalResult,
+      replaced: replace,
+    });
     router.refresh();
   }
 
@@ -167,7 +177,7 @@ export function UploadFlow() {
             <ItemCard
               key={item.localId}
               item={item}
-              onCommit={(r) => commitItem(item.localId, r)}
+              onCommit={(r, replace) => commitItem(item.localId, r, replace)}
               onReject={() => rejectItem(item.localId, item.storagePath)}
             />
           ))}
@@ -183,7 +193,7 @@ function ItemCard({
   onReject,
 }: {
   item: Item;
-  onCommit: (r: ParseResult) => Promise<void>;
+  onCommit: (r: ParseResult, replace?: boolean) => Promise<void>;
   onReject: () => void;
 }) {
   if (item.status === 'uploading' || item.status === 'parsing') {
@@ -225,7 +235,8 @@ function ItemCard({
           <div>
             <div className="text-sm font-medium">{item.file.name}</div>
             <div className="mt-1 text-xs text-green-800">
-              Committed: {item.result?.parsed.ticket_number} (
+              {item.replaced ? 'Replaced' : 'Committed'}:{' '}
+              {item.result?.parsed.ticket_number} (
               {formatMoney(item.result?.parsed.face_value ?? 0)})
             </div>
           </div>

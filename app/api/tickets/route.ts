@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 type CommitBody = {
   storage_path: string;
   parsed: ParsedTicket;
+  replace_existing?: boolean;
 };
 
 export async function POST(req: Request) {
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { storage_path, parsed } = body;
+  const { storage_path, parsed, replace_existing } = body;
 
   // PO lookup
   const { data: po, error: poErr } = await supabase
@@ -70,6 +71,37 @@ export async function POST(req: Request) {
           error: `BOL number(s) appear more than once within this ticket's own list: ${Array.from(new Set(internalDups)).join(', ')}. Remove the duplicates before committing.`,
         },
         { status: 400 }
+      );
+    }
+  }
+
+  // If replacing, delete the existing ticket first (cascades line_items +
+  // bol_registry). We capture the old PDF path so we can clean up storage
+  // after the new insert succeeds.
+  let oldPdfPath: string | null = null;
+  if (replace_existing) {
+    const { data: existing, error: findErr } = await supabase
+      .from('tickets')
+      .select('id, pdf_storage_path')
+      .eq('ticket_number', parsed.ticket_number)
+      .maybeSingle();
+    if (findErr || !existing) {
+      return NextResponse.json(
+        {
+          error: `Cannot replace: no existing ticket with number ${parsed.ticket_number}`,
+        },
+        { status: 404 }
+      );
+    }
+    oldPdfPath = existing.pdf_storage_path;
+    const { error: delErr } = await supabase
+      .from('tickets')
+      .delete()
+      .eq('id', existing.id);
+    if (delErr) {
+      return NextResponse.json(
+        { error: `Failed to delete existing ticket for replacement: ${delErr.message}` },
+        { status: 500 }
       );
     }
   }
@@ -153,7 +185,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // Move PDF from pending/ to committed/
+  // Move new PDF from pending/ to committed/
   const newPath = `committed/${ticket.id}.pdf`;
   const { error: moveErr } = await supabase.storage
     .from('ticket-pdfs')
@@ -171,5 +203,14 @@ export async function POST(req: Request) {
       .eq('id', ticket.id);
   }
 
-  return NextResponse.json({ ok: true, ticket_id: ticket.id });
+  // If we replaced an existing ticket, clean up its old PDF (best-effort).
+  if (oldPdfPath && oldPdfPath !== newPath && oldPdfPath !== storage_path) {
+    await supabase.storage.from('ticket-pdfs').remove([oldPdfPath]);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    ticket_id: ticket.id,
+    replaced: !!replace_existing,
+  });
 }

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { LineItemCategory } from '@/types/database';
 import type {
+  ExistingTicketSnapshot,
   ParseResult,
   ParsedLineItem,
   ParsedTicket,
@@ -23,6 +24,79 @@ function round2(n: number) {
 const inputCls =
   'w-full rounded border border-black/20 px-2 py-1 text-sm focus:outline-none focus:border-enbridge-black';
 
+type DiffEntry = { field: string; existing: string; incoming: string };
+
+function lineSummary(li: ParsedLineItem): string {
+  const markup = li.markup_percent > 0 ? ` +${li.markup_percent}%` : '';
+  return `${li.category} "${li.description}" — src ${formatMoney(li.source_amount)}${markup} → ${formatMoney(li.final_amount)}`;
+}
+
+function computeDiff(existing: ExistingTicketSnapshot, incoming: ParsedTicket): DiffEntry[] {
+  const diffs: DiffEntry[] = [];
+
+  if (existing.ticket_date !== incoming.ticket_date) {
+    diffs.push({
+      field: 'Date',
+      existing: existing.ticket_date,
+      incoming: incoming.ticket_date,
+    });
+  }
+  if (existing.po_number !== incoming.po_number) {
+    diffs.push({
+      field: 'PO Number',
+      existing: existing.po_number,
+      incoming: incoming.po_number,
+    });
+  }
+  if (Math.abs(existing.face_value - incoming.face_value) >= 0.005) {
+    diffs.push({
+      field: 'Face value',
+      existing: formatMoney(existing.face_value),
+      incoming: formatMoney(incoming.face_value),
+    });
+  }
+  if (existing.is_master !== incoming.is_master) {
+    diffs.push({
+      field: 'Master ticket?',
+      existing: existing.is_master ? 'yes' : 'no',
+      incoming: incoming.is_master ? 'yes' : 'no',
+    });
+  }
+  const eBols = [...existing.bol_numbers].sort();
+  const iBols = [...incoming.bol_numbers].sort();
+  if (eBols.length !== iBols.length || eBols.some((b, i) => b !== iBols[i])) {
+    diffs.push({
+      field: 'BOL numbers',
+      existing: eBols.join(', ') || '(none)',
+      incoming: iBols.join(', ') || '(none)',
+    });
+  }
+
+  const maxLen = Math.max(existing.line_items.length, incoming.line_items.length);
+  for (let i = 0; i < maxLen; i++) {
+    const e = existing.line_items[i];
+    const n = incoming.line_items[i];
+    const label = `Line ${i + 1}`;
+    if (!e) {
+      diffs.push({ field: label, existing: '(not present)', incoming: lineSummary(n) });
+    } else if (!n) {
+      diffs.push({ field: label, existing: lineSummary(e), incoming: '(removed)' });
+    } else {
+      const lineChanged =
+        e.category !== n.category ||
+        e.description !== n.description ||
+        Math.abs((e.source_amount ?? 0) - (n.source_amount ?? 0)) >= 0.005 ||
+        Math.abs((e.markup_percent ?? 0) - (n.markup_percent ?? 0)) >= 0.005 ||
+        Math.abs((e.final_amount ?? 0) - (n.final_amount ?? 0)) >= 0.005;
+      if (lineChanged) {
+        diffs.push({ field: label, existing: lineSummary(e), incoming: lineSummary(n) });
+      }
+    }
+  }
+
+  return diffs;
+}
+
 export function ParsePreview({
   filename,
   initialResult,
@@ -31,7 +105,7 @@ export function ParsePreview({
 }: {
   filename: string;
   initialResult: ParseResult;
-  onCommit: (r: ParseResult) => Promise<void>;
+  onCommit: (r: ParseResult, replace?: boolean) => Promise<void>;
   onReject: () => void;
 }) {
   const [ticket, setTicket] = useState<ParsedTicket>(initialResult.parsed);
@@ -46,12 +120,44 @@ export function ParsePreview({
   const reconciled = Math.abs(diff) < 0.005;
 
   const dup = initialResult.duplicates;
+  const existingSnapshot = dup.existing_ticket_snapshot;
   const hasTicketDup = !!dup.ticket_number_collides_with;
-  const hasBolDup = dup.bol_collisions.length > 0;
-  const canCommit =
+
+  // Re-run the diff on every state change so user edits to the parsed ticket
+  // are reflected (typing a different date in the editable field, etc.).
+  const diffs = useMemo(
+    () => (existingSnapshot ? computeDiff(existingSnapshot, ticket) : []),
+    [existingSnapshot, ticket]
+  );
+
+  const isIdenticalDuplicate = !!existingSnapshot && diffs.length === 0;
+  const isRevision = !!existingSnapshot && diffs.length > 0;
+
+  // BOL collisions where the master_ticket is the same one we're replacing
+  // are "self-collisions" — they'll be deleted by the replace operation
+  // before the new insert, so they don't block Replace.
+  const blockingBolCollisions = useMemo(() => {
+    if (existingSnapshot) {
+      return dup.bol_collisions.filter(
+        (c) => c.master_ticket !== existingSnapshot.ticket_number
+      );
+    }
+    return dup.bol_collisions;
+  }, [dup.bol_collisions, existingSnapshot]);
+
+  const hasBlockingBolDup = blockingBolCollisions.length > 0;
+
+  const canCommitFresh =
     reconciled &&
     !hasTicketDup &&
-    !hasBolDup &&
+    !hasBlockingBolDup &&
+    initialResult.po_exists &&
+    !committing;
+
+  const canReplace =
+    isRevision &&
+    reconciled &&
+    !hasBlockingBolDup &&
     initialResult.po_exists &&
     !committing;
 
@@ -95,11 +201,11 @@ export function ParsePreview({
     }));
   }
 
-  async function commit() {
+  async function commit(replace: boolean) {
     setCommitting(true);
     setCommitError('');
     try {
-      await onCommit({ ...initialResult, parsed: ticket });
+      await onCommit({ ...initialResult, parsed: ticket }, replace);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setCommitError(msg);
@@ -107,6 +213,13 @@ export function ParsePreview({
       setCommitting(false);
     }
   }
+
+  const showBanners =
+    initialResult.warnings.length > 0 ||
+    hasTicketDup ||
+    blockingBolCollisions.length > 0 ||
+    !initialResult.po_exists ||
+    commitError;
 
   return (
     <div className="bg-white rounded-lg border border-black/10 overflow-hidden">
@@ -136,11 +249,7 @@ export function ParsePreview({
         </div>
       </div>
 
-      {(initialResult.warnings.length > 0 ||
-        hasTicketDup ||
-        hasBolDup ||
-        !initialResult.po_exists ||
-        commitError) && (
+      {showBanners && (
         <div className="px-5 py-3 border-b border-black/10 space-y-2">
           {!initialResult.po_exists && (
             <Banner level="error">
@@ -148,16 +257,62 @@ export function ParsePreview({
               found. Fix the PO number below or reject this upload.
             </Banner>
           )}
-          {hasTicketDup && (
+
+          {isIdenticalDuplicate && (
+            <Banner level="warn">
+              Ticket #{' '}
+              <strong className="font-mono">{ticket.ticket_number}</strong> is
+              already on file with <strong>identical data</strong>. True duplicate
+              — nothing to commit. Reject this upload.
+            </Banner>
+          )}
+
+          {isRevision && (
+            <div className="rounded p-3 bg-amber-50 border border-amber-200 text-xs text-amber-900">
+              <div className="font-medium text-sm">
+                Revision detected for ticket #{' '}
+                <span className="font-mono">{ticket.ticket_number}</span>
+              </div>
+              <div className="mt-1 text-amber-900/80">
+                Already on file (PO {existingSnapshot?.po_number}). The new upload
+                differs from the existing record. Review the changes below; choose{' '}
+                <strong>Replace existing ticket</strong> to overwrite or{' '}
+                <strong>Reject</strong> to keep the existing version.
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-amber-900/70 border-b border-amber-200">
+                      <th className="text-left py-1 pr-2">Field</th>
+                      <th className="text-left py-1 pr-2">On file</th>
+                      <th className="text-left py-1 pl-2">New upload</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diffs.map((d, i) => (
+                      <tr key={i} className="border-b border-amber-100 last:border-0 align-top">
+                        <td className="py-1 pr-2 font-medium whitespace-nowrap">{d.field}</td>
+                        <td className="py-1 pr-2 text-amber-900/90">{d.existing}</td>
+                        <td className="py-1 pl-2 text-amber-900/90">{d.incoming}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {hasTicketDup && !existingSnapshot && (
             <Banner level="error">
               Ticket #{' '}
               <strong className="font-mono">{ticket.ticket_number}</strong>{' '}
-              already exists
+              matches a BOL number already registered
               {dup.ticket_existing ? ` (${dup.ticket_existing.po_number})` : ''}.
-              This is a duplicate.
+              This number cannot be used as a ticket number.
             </Banner>
           )}
-          {dup.bol_collisions.map((c) => (
+
+          {blockingBolCollisions.map((c) => (
             <Banner key={c.bol_number} level="error">
               BOL <strong className="font-mono">{c.bol_number}</strong>{' '}
               {c.master_ticket
@@ -166,11 +321,13 @@ export function ParsePreview({
               .
             </Banner>
           ))}
+
           {initialResult.warnings.map((w, i) => (
             <Banner key={i} level="warn">
               {w}
             </Banner>
           ))}
+
           {commitError && <Banner level="error">{commitError}</Banner>}
         </div>
       )}
@@ -421,13 +578,24 @@ export function ParsePreview({
         >
           Reject
         </button>
-        <button
-          onClick={commit}
-          disabled={!canCommit}
-          className="px-3 py-2 text-sm rounded bg-enbridge-black text-white hover:bg-enbridge-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {committing ? 'Committing…' : 'Commit ticket'}
-        </button>
+        {isRevision && (
+          <button
+            onClick={() => commit(true)}
+            disabled={!canReplace}
+            className="px-3 py-2 text-sm rounded bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {committing ? 'Replacing…' : 'Replace existing ticket'}
+          </button>
+        )}
+        {!hasTicketDup && (
+          <button
+            onClick={() => commit(false)}
+            disabled={!canCommitFresh}
+            className="px-3 py-2 text-sm rounded bg-enbridge-black text-white hover:bg-enbridge-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {committing ? 'Committing…' : 'Commit ticket'}
+          </button>
+        )}
       </div>
     </div>
   );
