@@ -61,7 +61,11 @@ export async function extractFromPdf(
   pdfBase64: string,
   filename: string
 ): Promise<ParsedTicket> {
-  const response = await client.messages.create({
+  // The @anthropic-ai/sdk 0.30 TypeScript types don't yet include `document`
+  // content blocks or `cache_control` on system text. Both are supported by
+  // the API at runtime, so we cast past the type check.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const params: any = {
     model: 'claude-opus-4-7',
     max_tokens: 4096,
     system: [
@@ -90,7 +94,9 @@ export async function extractFromPdf(
         ],
       },
     ],
-  });
+  };
+
+  const response = await client.messages.create(params);
 
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
