@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { formatMoney } from '@/lib/money';
@@ -26,6 +26,21 @@ export function UploadFlow() {
   const [items, setItems] = useState<Item[]>([]);
   const [dragging, setDragging] = useState(false);
   const router = useRouter();
+
+  // Suppress the browser default of opening a dropped PDF in a new tab
+  // when the drop lands anywhere on the upload page (outside or slightly
+  // off the dashed drop zone). The drop zone div keeps its own handler
+  // for actually processing files dropped inside it.
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => e.preventDefault();
+    const onDrop = (e: DragEvent) => e.preventDefault();
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, []);
 
   function patchItem(localId: string, patch: Partial<Item>) {
     setItems((prev) =>
