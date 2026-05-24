@@ -5,8 +5,8 @@ export function KpiCards({ totals }: { totals: DashboardTotals }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <Card
-        label="Total Spent"
-        value={formatMoney(totals.totalSpent)}
+        label="LEM-to-Date"
+        value={formatMoney(totals.totalLem)}
         sub={`${formatPct(totals.pctOfActiveCommitment)} of active commitment`}
       />
       <Card

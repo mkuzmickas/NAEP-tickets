@@ -8,16 +8,12 @@ export function ReadingLegend() {
           (GST excluded).
         </li>
         <li>
-          <strong>Invoiced</strong> is what has been billed and matched in the AP system, plus any
-          tickets here marked as invoiced.
+          <strong>LEM-to-Date</strong> is the sum of all field tickets logged in this portal for the PO.
+          Invoiced amounts are tracked in a separate AP system and are not shown here.
         </li>
         <li>
-          <strong>LEM-to-Date</strong> is field tickets logged in this portal that have not yet been
-          invoiced.
-        </li>
-        <li>
-          <strong>Total Spent</strong> = Invoiced + LEM-to-Date. <strong>Remaining</strong> =
-          Committed − Total Spent.
+          <strong>Remaining</strong> = Committed − LEM-to-Date.{' '}
+          <strong>% Used</strong> = LEM-to-Date / Committed.
         </li>
         <li>
           <strong>% Used</strong> shades{' '}

@@ -18,9 +18,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
               <Th>Vendor</Th>
               <Th>Description</Th>
               <Th right>Committed</Th>
-              <Th right>Invoiced</Th>
               <Th right>LEM-to-Date</Th>
-              <Th right>Total Spent</Th>
               <Th right>Remaining</Th>
               <Th right>% Used</Th>
             </tr>
@@ -34,16 +32,14 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                   <span className="text-enbridge-black/80 line-clamp-2">{r.scope ?? '—'}</span>
                 </Td>
                 <Td right>{formatMoney(r.committed)}</Td>
-                <Td right>{formatMoney(r.invoiced)}</Td>
                 <Td right>{formatMoney(r.lem_to_date)}</Td>
-                <Td right>{formatMoney(r.total_spent)}</Td>
                 <Td right>{formatMoney(r.remaining)}</Td>
                 <PctCell value={r.pct_used} />
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-enbridge-black/55 text-sm">
+                <td colSpan={7} className="px-4 py-8 text-center text-enbridge-black/55 text-sm">
                   No active POs yet. A PO becomes active once its first ticket is logged.
                 </td>
               </tr>

@@ -1,4 +1,3 @@
-import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import type { ActivePoSummary } from '@/types/database';
 
@@ -9,9 +8,7 @@ type RawRow = {
   scope: string | null;
   task_wbs: string | null;
   committed: string | number;
-  invoiced: string | number;
   lem_to_date: string | number;
-  total_spent: string | number;
   remaining: string | number;
   pct_used: string | number;
   ticket_count: number | string;
@@ -37,9 +34,7 @@ export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
     scope: r.scope,
     task_wbs: r.task_wbs,
     committed: n(r.committed),
-    invoiced: n(r.invoiced),
     lem_to_date: n(r.lem_to_date),
-    total_spent: n(r.total_spent),
     remaining: n(r.remaining),
     pct_used: n(r.pct_used),
     ticket_count: Number(r.ticket_count),
@@ -47,7 +42,7 @@ export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
 }
 
 export type DashboardTotals = {
-  totalSpent: number;
+  totalLem: number;
   totalCommitted: number;
   totalRemaining: number;
   totalTickets: number;
@@ -57,15 +52,16 @@ export type DashboardTotals = {
 };
 
 export function computeTotals(rows: ActivePoSummary[]): DashboardTotals {
-  const totalSpent = rows.reduce((sum, r) => sum + r.total_spent, 0);
+  const totalLem = rows.reduce((sum, r) => sum + r.lem_to_date, 0);
   const totalCommitted = rows.reduce((sum, r) => sum + r.committed, 0);
   const totalRemaining = rows.reduce((sum, r) => sum + r.remaining, 0);
   const totalTickets = rows.reduce((sum, r) => sum + r.ticket_count, 0);
   const activePoCount = rows.length;
   const activeVendorCount = new Set(rows.map((r) => r.vendor_display_name)).size;
-  const pctOfActiveCommitment = totalCommitted > 0 ? (totalSpent / totalCommitted) * 100 : 0;
+  const pctOfActiveCommitment =
+    totalCommitted > 0 ? (totalLem / totalCommitted) * 100 : 0;
   return {
-    totalSpent,
+    totalLem,
     totalCommitted,
     totalRemaining,
     totalTickets,

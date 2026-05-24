@@ -61,9 +61,7 @@ export type ActivePoSummary = {
   scope: string | null;
   task_wbs: string | null;
   committed: number;
-  invoiced: number;
   lem_to_date: number;
-  total_spent: number;
   remaining: number;
   pct_used: number;
   ticket_count: number;
