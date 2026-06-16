@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 const PO_REGEX = /^PUR-6540-\d{7}$/;
@@ -14,6 +14,15 @@ const EMPTY_FORM = {
   committed_amount: '',
 };
 
+type ParsedPo = {
+  po_number: string;
+  vendor_legal_name: string;
+  vendor_display_name: string;
+  task_wbs: string;
+  scope: string;
+  committed_amount: number;
+};
+
 export function AddPoForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -22,10 +31,82 @@ export function AddPoForm() {
   const [successMsg, setSuccessMsg] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
 
+  // PDF parsing state
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState('');
+  const [parsedFilename, setParsedFilename] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Suppress browser default of opening dropped PDFs when the panel is open.
+  useEffect(() => {
+    if (!open) return;
+    const onDragOver = (e: DragEvent) => e.preventDefault();
+    const onDrop = (e: DragEvent) => e.preventDefault();
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [open]);
+
   function clearForm() {
     setForm(EMPTY_FORM);
     setErrorMsg('');
     setSuccessMsg('');
+    setParseError('');
+    setParsedFilename('');
+  }
+
+  async function processPdf(file: File) {
+    setParsing(true);
+    setParseError('');
+    setSuccessMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/pos/parse', {
+        method: 'POST',
+        body: fd,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Parse failed (${res.status})`);
+      }
+      const data = (await res.json()) as { ok: true; parsed: ParsedPo };
+      const p = data.parsed;
+      setForm({
+        po_number: p.po_number ?? '',
+        vendor_legal_name: p.vendor_legal_name ?? '',
+        vendor_display_name: p.vendor_display_name ?? '',
+        task_wbs: p.task_wbs ?? '',
+        scope: p.scope ?? '',
+        committed_amount:
+          p.committed_amount && p.committed_amount > 0
+            ? String(p.committed_amount)
+            : '',
+      });
+      setParsedFilename(file.name);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setParseError(msg);
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function onFile(fl: FileList | null) {
+    if (!fl || fl.length === 0) return;
+    const file = fl[0];
+    if (
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf')
+    ) {
+      processPdf(file);
+    } else {
+      setParseError('Please drop a PDF file.');
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -76,6 +157,7 @@ export function AddPoForm() {
       }
       const data = await res.json();
       setForm(EMPTY_FORM);
+      setParsedFilename('');
       setSuccessMsg(`Added PO ${data.po_number}. The list below has been refreshed.`);
       router.refresh();
     } catch (e: unknown) {
@@ -97,7 +179,61 @@ export function AddPoForm() {
       </button>
       {open && (
         <form onSubmit={handleSubmit} className="px-5 pb-5 space-y-4 border-t border-black/5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4">
+          {/* PDF drop zone */}
+          <div className="pt-4">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                onFile(e.dataTransfer.files);
+              }}
+              className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
+                dragging
+                  ? 'border-enbridge-black bg-enbridge-paper'
+                  : 'border-enbridge-yellow bg-white'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => onFile(e.target.files)}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={parsing}
+                className="text-sm font-medium text-enbridge-black hover:underline disabled:opacity-60"
+              >
+                {parsing ? (
+                  'Parsing PO PDF with Claude…'
+                ) : parsedFilename ? (
+                  <>
+                    Parsed: <span className="font-mono text-xs">{parsedFilename}</span> — drop another to replace
+                  </>
+                ) : (
+                  <>Drop the PO PDF here, or click to choose a file</>
+                )}
+              </button>
+              <div className="mt-1 text-xs text-enbridge-black/55">
+                Drop the actual procurement PO (not a field ticket). Auto-fills the form — review and edit before saving.
+              </div>
+            </div>
+            {parseError && (
+              <div className="mt-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
+                {parseError}
+              </div>
+            )}
+          </div>
+
+          {/* Form fields */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="PO Number" hint="Format: PUR-6540-XXXXXXX">
               <input
                 value={form.po_number}
@@ -173,14 +309,14 @@ export function AddPoForm() {
             <button
               type="button"
               onClick={clearForm}
-              disabled={submitting}
+              disabled={submitting || parsing}
               className="px-3 py-2 text-sm rounded border border-black/15 hover:bg-enbridge-paper disabled:opacity-60"
             >
               Clear
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || parsing}
               className="px-3 py-2 text-sm rounded bg-enbridge-black text-white hover:bg-enbridge-black/90 disabled:opacity-60"
             >
               {submitting ? 'Saving…' : 'Save PO'}
