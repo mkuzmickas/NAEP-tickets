@@ -26,6 +26,7 @@ export function TopBar({ userEmail }: { userEmail: string }) {
             <Link href="/" className="hover:text-enbridge-black">Dashboard</Link>
             <Link href="/tickets" className="hover:text-enbridge-black">Logged Tickets</Link>
             <Link href="/upload" className="hover:text-enbridge-black">Upload</Link>
+            <Link href="/admin/pos" className="hover:text-enbridge-black">POs</Link>
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm text-enbridge-black/70">
