@@ -8,6 +8,8 @@ export type PoReferenceRow = {
   scope: string | null;
   task_wbs: string | null;
   committed_amount: number;
+  manual_active_override: boolean;
+  has_tickets: boolean;
   is_active: boolean;
 };
 
@@ -36,6 +38,8 @@ export async function getAllPos(): Promise<PoReferenceRow[]> {
     scope: r.scope,
     task_wbs: r.task_wbs,
     committed_amount: Number(r.committed_amount),
+    manual_active_override: r.manual_active_override,
+    has_tickets: r.has_tickets,
     is_active: r.is_active,
   }));
 }

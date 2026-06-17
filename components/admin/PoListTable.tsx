@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { formatMoney } from '@/lib/money';
 import type { PoReferenceRow } from '@/lib/pos';
 
@@ -16,10 +17,31 @@ type StatusFilter = 'all' | 'active' | 'inactive';
 const NUMERIC_OR_FLAG_KEYS: SortKey[] = ['is_active', 'committed_amount'];
 
 export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('is_active');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // Optimistic local state for the override checkboxes so toggles feel instant.
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [pending, setPending] = useState<Set<string>>(new Set());
+
+  // Sync local override state whenever rows refresh (after a successful PATCH
+  // followed by router.refresh()).
+  useEffect(() => {
+    setOverrides(
+      Object.fromEntries(rows.map((r) => [r.id, r.manual_active_override]))
+    );
+  }, [rows]);
+
+  function isOverridden(r: PoReferenceRow): boolean {
+    return overrides[r.id] ?? r.manual_active_override;
+  }
+
+  function effectiveActive(r: PoReferenceRow): boolean {
+    return r.has_tickets || isOverridden(r);
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -34,13 +56,13 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
           (r.task_wbs ?? '').toLowerCase().includes(q)
       );
     }
-    if (statusFilter === 'active') result = result.filter((r) => r.is_active);
-    if (statusFilter === 'inactive') result = result.filter((r) => !r.is_active);
+    if (statusFilter === 'active') result = result.filter((r) => effectiveActive(r));
+    if (statusFilter === 'inactive') result = result.filter((r) => !effectiveActive(r));
 
     return [...result].sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'is_active') {
-        cmp = (a.is_active ? 1 : 0) - (b.is_active ? 1 : 0);
+        cmp = (effectiveActive(a) ? 1 : 0) - (effectiveActive(b) ? 1 : 0);
         if (cmp === 0) cmp = a.committed_amount - b.committed_amount;
       } else {
         const av = a[sortKey];
@@ -57,7 +79,8 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [rows, search, statusFilter, sortKey, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, search, statusFilter, sortKey, sortDir, overrides]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -73,12 +96,47 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
     setStatusFilter('all');
   }
 
+  async function toggleOverride(r: PoReferenceRow) {
+    if (pending.has(r.id)) return;
+    const current = isOverridden(r);
+    const next = !current;
+
+    // Optimistic
+    setOverrides((o) => ({ ...o, [r.id]: next }));
+    setPending((p) => {
+      const s = new Set(p);
+      s.add(r.id);
+      return s;
+    });
+
+    try {
+      const res = await fetch(`/api/pos/${r.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manual_active_override: next }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Update failed (${res.status})`);
+      }
+      router.refresh();
+    } catch (e: unknown) {
+      // Rollback
+      setOverrides((o) => ({ ...o, [r.id]: current }));
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`Failed to update override: ${msg}`);
+    } finally {
+      setPending((p) => {
+        const s = new Set(p);
+        s.delete(r.id);
+        return s;
+      });
+    }
+  }
+
   const filtersActive = !!(search || statusFilter !== 'all');
-  const activeCount = filtered.filter((p) => p.is_active).length;
-  const filteredCommitted = filtered.reduce(
-    (s, r) => s + r.committed_amount,
-    0
-  );
+  const activeCount = filtered.filter((p) => effectiveActive(p)).length;
+  const filteredCommitted = filtered.reduce((s, r) => s + r.committed_amount, 0);
 
   return (
     <div className="bg-white rounded-lg border border-black/10 overflow-hidden">
@@ -128,6 +186,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
               >
                 Status
               </SortableTh>
+              <Th>Override</Th>
               <SortableTh
                 active={sortKey === 'po_number'}
                 dir={sortDir}
@@ -161,48 +220,60 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
-              <tr
-                key={p.id}
-                className="border-t border-black/5 hover:bg-enbridge-paper/60"
-              >
-                <td className="px-4 py-3 align-top">
-                  {p.is_active ? (
-                    <span className="text-[10px] uppercase tracking-wide bg-green-100 text-green-900 px-1.5 py-0.5 rounded">
-                      Active
+            {filtered.map((p) => {
+              const overridden = isOverridden(p);
+              const active = effectiveActive(p);
+              return (
+                <tr
+                  key={p.id}
+                  className="border-t border-black/5 hover:bg-enbridge-paper/60"
+                >
+                  <td className="px-4 py-3 align-top">
+                    <StatusBadge
+                      hasTickets={p.has_tickets}
+                      overridden={overridden}
+                      active={active}
+                    />
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <label className="inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={overridden}
+                        disabled={pending.has(p.id)}
+                        onChange={() => toggleOverride(p)}
+                        aria-label={`Manual active override for ${p.po_number}`}
+                        className="cursor-pointer disabled:cursor-wait h-4 w-4"
+                      />
+                    </label>
+                  </td>
+                  <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                    {p.po_number}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {p.vendor_display_name}
+                    <div className="text-[10px] text-enbridge-black/55">
+                      {p.vendor_legal_name}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                    {p.task_wbs ?? '—'}
+                  </td>
+                  <td className="px-4 py-3 align-top max-w-md">
+                    <span className="text-enbridge-black/80 line-clamp-2">
+                      {p.scope ?? '—'}
                     </span>
-                  ) : (
-                    <span className="text-[10px] uppercase tracking-wide bg-black/5 text-enbridge-black/60 px-1.5 py-0.5 rounded">
-                      Inactive
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
-                  {p.po_number}
-                </td>
-                <td className="px-4 py-3 align-top">
-                  {p.vendor_display_name}
-                  <div className="text-[10px] text-enbridge-black/55">
-                    {p.vendor_legal_name}
-                  </div>
-                </td>
-                <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
-                  {p.task_wbs ?? '—'}
-                </td>
-                <td className="px-4 py-3 align-top max-w-md">
-                  <span className="text-enbridge-black/80 line-clamp-2">
-                    {p.scope ?? '—'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 align-top text-right tabular-nums whitespace-nowrap">
-                  {formatMoney(p.committed_amount)}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3 align-top text-right tabular-nums whitespace-nowrap">
+                    {formatMoney(p.committed_amount)}
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
                 >
                   {rows.length === 0
@@ -216,6 +287,40 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
       </div>
     </div>
   );
+}
+
+function StatusBadge({
+  hasTickets,
+  overridden,
+  active,
+}: {
+  hasTickets: boolean;
+  overridden: boolean;
+  active: boolean;
+}) {
+  if (!active) {
+    return (
+      <span className="text-[10px] uppercase tracking-wide bg-black/5 text-enbridge-black/60 px-1.5 py-0.5 rounded">
+        Inactive
+      </span>
+    );
+  }
+  if (hasTickets) {
+    return (
+      <span className="text-[10px] uppercase tracking-wide bg-green-100 text-green-900 px-1.5 py-0.5 rounded">
+        Active
+      </span>
+    );
+  }
+  // active && !hasTickets => only because of the override
+  if (overridden) {
+    return (
+      <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">
+        Forced
+      </span>
+    );
+  }
+  return null;
 }
 
 function Th({

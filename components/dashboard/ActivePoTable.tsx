@@ -183,7 +183,14 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 key={r.id}
                 className="border-t border-black/5 hover:bg-enbridge-paper/60"
               >
-                <Td mono>{r.po_number}</Td>
+                <Td mono>
+                  {r.po_number}
+                  {r.ticket_count === 0 && (
+                    <span className="ml-1 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-900 px-1 py-0.5 rounded">
+                      override
+                    </span>
+                  )}
+                </Td>
                 <Td>{r.vendor_display_name}</Td>
                 <Td className="max-w-xs">
                   <span className="text-enbridge-black/80 line-clamp-2">
