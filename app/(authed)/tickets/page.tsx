@@ -3,8 +3,13 @@ import { TicketTable } from '@/components/tickets/TicketTable';
 
 export const revalidate = 0;
 
-export default async function TicketsPage() {
+export default async function TicketsPage({
+  searchParams,
+}: {
+  searchParams: { po?: string };
+}) {
   const tickets = await getAllTickets();
+  const initialPoFilter = searchParams.po ?? 'all';
 
   return (
     <div className="space-y-6">
@@ -15,7 +20,10 @@ export default async function TicketsPage() {
         </p>
       </header>
 
-      <TicketTable initialTickets={tickets} />
+      <TicketTable
+        initialTickets={tickets}
+        initialPoFilter={initialPoFilter}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { formatMoney, formatPct } from '@/lib/money';
 import type { ActivePoSummary } from '@/types/database';
 
@@ -23,6 +24,7 @@ const NUMERIC_KEYS: SortKey[] = [
 ];
 
 export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('pct_used');
@@ -181,7 +183,11 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             {filtered.map((r) => (
               <tr
                 key={r.id}
-                className="border-t border-black/5 hover:bg-enbridge-paper/60"
+                onClick={() =>
+                  router.push(`/tickets?po=${encodeURIComponent(r.po_number)}`)
+                }
+                className="border-t border-black/5 hover:bg-enbridge-paper/60 cursor-pointer"
+                title={`Click to see all tickets for ${r.po_number}`}
               >
                 <Td mono>
                   {r.po_number}

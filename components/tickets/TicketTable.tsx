@@ -34,10 +34,16 @@ async function viewPdf(path: string) {
   window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
 }
 
-export function TicketTable({ initialTickets }: { initialTickets: TicketRow[] }) {
+export function TicketTable({
+  initialTickets,
+  initialPoFilter = 'all',
+}: {
+  initialTickets: TicketRow[];
+  initialPoFilter?: string;
+}) {
   const router = useRouter();
   const [search, setSearch] = useState('');
-  const [poFilter, setPoFilter] = useState<string>('all');
+  const [poFilter, setPoFilter] = useState<string>(initialPoFilter);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('ticket_date');
