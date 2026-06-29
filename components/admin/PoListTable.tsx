@@ -7,6 +7,7 @@ import type { PoReferenceRow } from '@/lib/pos';
 
 type SortKey =
   | 'po_number'
+  | 'project_cost_code'
   | 'vendor_display_name'
   | 'task_wbs'
   | 'committed_amount';
@@ -18,6 +19,7 @@ type EditState = {
   vendor_legal_name: string;
   vendor_display_name: string;
   task_wbs: string;
+  project_cost_code: string;
   scope: string;
   committed_amount: string;
 };
@@ -42,7 +44,8 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
           r.vendor_display_name.toLowerCase().includes(q) ||
           r.vendor_legal_name.toLowerCase().includes(q) ||
           (r.scope ?? '').toLowerCase().includes(q) ||
-          (r.task_wbs ?? '').toLowerCase().includes(q)
+          (r.task_wbs ?? '').toLowerCase().includes(q) ||
+          (r.project_cost_code ?? '').toLowerCase().includes(q)
       );
     }
     return [...result].sort((a, b) => {
@@ -77,6 +80,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
       vendor_legal_name: r.vendor_legal_name,
       vendor_display_name: r.vendor_display_name,
       task_wbs: r.task_wbs ?? '',
+      project_cost_code: r.project_cost_code ?? '',
       scope: r.scope ?? '',
       committed_amount: String(r.committed_amount),
     });
@@ -119,6 +123,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
           vendor_legal_name: editState.vendor_legal_name.trim(),
           vendor_display_name: editState.vendor_display_name.trim(),
           task_wbs: editState.task_wbs.trim() || null,
+          project_cost_code: editState.project_cost_code.trim() || null,
           scope: editState.scope.trim() || null,
           committed_amount: committed,
         }),
@@ -155,7 +160,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search PO #, vendor, WBS, or description"
+          placeholder="Search PO #, vendor, cost code, WBS, or description"
           className="w-full rounded border border-black/20 px-3 py-1.5 text-sm focus:outline-none focus:border-enbridge-black"
         />
         {filtersActive && (
@@ -177,6 +182,13 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
                 onClick={() => toggleSort('po_number')}
               >
                 PO Number
+              </SortableTh>
+              <SortableTh
+                active={sortKey === 'project_cost_code'}
+                dir={sortDir}
+                onClick={() => toggleSort('project_cost_code')}
+              >
+                Project Cost Code
               </SortableTh>
               <SortableTh
                 active={sortKey === 'vendor_display_name'}
@@ -215,6 +227,19 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
                       <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
                         {p.po_number}
                       </td>
+                      <td className="px-4 py-3 align-top">
+                        <input
+                          value={editState.project_cost_code}
+                          onChange={(e) =>
+                            setEditState({
+                              ...editState,
+                              project_cost_code: e.target.value,
+                            })
+                          }
+                          placeholder="04.P1.X.XXX.XXX"
+                          className="w-full rounded border border-black/20 px-2 py-1 text-xs font-mono focus:outline-none focus:border-enbridge-black"
+                        />
+                      </td>
                       <td className="px-4 py-3 align-top space-y-1">
                         <input
                           value={editState.vendor_display_name}
@@ -245,7 +270,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
                           onChange={(e) =>
                             setEditState({ ...editState, task_wbs: e.target.value })
                           }
-                          placeholder="04.P1.W.WMI.XXX"
+                          placeholder="Optional"
                           className="w-full rounded border border-black/20 px-2 py-1 text-xs font-mono focus:outline-none focus:border-enbridge-black"
                         />
                       </td>
@@ -296,7 +321,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
                     {saveError && (
                       <tr className="bg-red-50 border-t border-red-200">
                         <td
-                          colSpan={6}
+                          colSpan={7}
                           className="px-4 py-2 text-xs text-red-800"
                         >
                           {saveError}
@@ -308,6 +333,9 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
                   <tr className="border-t border-black/5 hover:bg-enbridge-paper/60">
                     <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
                       {p.po_number}
+                    </td>
+                    <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                      {p.project_cost_code ?? '—'}
                     </td>
                     <td className="px-4 py-3 align-top">
                       {p.vendor_display_name}
@@ -341,7 +369,7 @@ export function PoListTable({ rows }: { rows: PoReferenceRow[] }) {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
                 >
                   {rows.length === 0

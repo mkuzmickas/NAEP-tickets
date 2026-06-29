@@ -11,6 +11,7 @@ type AddPoBody = {
   vendor_legal_name?: string;
   vendor_display_name?: string;
   task_wbs?: string | null;
+  project_cost_code?: string | null;
   scope?: string | null;
   committed_amount?: number;
 };
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
   }
 
   const task_wbs = (body.task_wbs ?? '').trim() || null;
+  const project_cost_code = (body.project_cost_code ?? '').trim() || null;
   const scope = (body.scope ?? '').trim() || null;
 
   const { data, error } = await supabase
@@ -63,6 +65,7 @@ export async function POST(req: Request) {
       vendor_legal_name,
       vendor_display_name,
       task_wbs,
+      project_cost_code,
       scope,
       committed_amount,
       ap_invoiced_amount: 0,

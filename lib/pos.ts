@@ -7,6 +7,7 @@ export type PoReferenceRow = {
   vendor_legal_name: string;
   scope: string | null;
   task_wbs: string | null;
+  project_cost_code: string | null;
   committed_amount: number;
 };
 
@@ -33,6 +34,7 @@ export async function getAllPos(): Promise<PoReferenceRow[]> {
     vendor_legal_name: r.vendor_legal_name,
     scope: r.scope,
     task_wbs: r.task_wbs,
+    project_cost_code: r.project_cost_code,
     committed_amount: Number(r.committed_amount),
   }));
 }

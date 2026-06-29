@@ -10,6 +10,7 @@ const EMPTY_FORM = {
   vendor_legal_name: '',
   vendor_display_name: '',
   task_wbs: '',
+  project_cost_code: '',
   scope: '',
   committed_amount: '',
 };
@@ -18,7 +19,7 @@ type ParsedPo = {
   po_number: string;
   vendor_legal_name: string;
   vendor_display_name: string;
-  task_wbs: string;
+  project_cost_code: string;
   scope: string;
   committed_amount: number;
 };
@@ -31,14 +32,12 @@ export function AddPoForm() {
   const [successMsg, setSuccessMsg] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
 
-  // PDF parsing state
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState('');
   const [parsedFilename, setParsedFilename] = useState('');
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Suppress browser default of opening dropped PDFs when the panel is open.
   useEffect(() => {
     if (!open) return;
     const onDragOver = (e: DragEvent) => e.preventDefault();
@@ -80,7 +79,8 @@ export function AddPoForm() {
         po_number: p.po_number ?? '',
         vendor_legal_name: p.vendor_legal_name ?? '',
         vendor_display_name: p.vendor_display_name ?? '',
-        task_wbs: p.task_wbs ?? '',
+        task_wbs: '',
+        project_cost_code: p.project_cost_code ?? '',
         scope: p.scope ?? '',
         committed_amount:
           p.committed_amount && p.committed_amount > 0
@@ -147,6 +147,7 @@ export function AddPoForm() {
           vendor_legal_name: form.vendor_legal_name.trim(),
           vendor_display_name: form.vendor_display_name.trim(),
           task_wbs: form.task_wbs.trim() || null,
+          project_cost_code: form.project_cost_code.trim() || null,
           scope: form.scope.trim() || null,
           committed_amount: committed,
         }),
@@ -179,7 +180,6 @@ export function AddPoForm() {
       </button>
       {open && (
         <form onSubmit={handleSubmit} className="px-5 pb-5 space-y-4 border-t border-black/5">
-          {/* PDF drop zone */}
           <div className="pt-4">
             <div
               onDragOver={(e) => {
@@ -232,7 +232,6 @@ export function AddPoForm() {
             )}
           </div>
 
-          {/* Form fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="PO Number" hint="Format: PUR-6540-XXXXXXX">
               <input
@@ -272,18 +271,27 @@ export function AddPoForm() {
                 autoComplete="off"
               />
             </Field>
-            <Field label="Task / WBS" hint="Optional — e.g. 04.P1.W.WMI.299" className="sm:col-span-2">
+            <Field label="Project Cost Code" hint="e.g. 04.P1.W.CST.130.502 — from the GL/WBS line on the PO">
+              <input
+                value={form.project_cost_code}
+                onChange={(e) => setForm({ ...form, project_cost_code: e.target.value })}
+                placeholder="04.P1.X.XXX.XXX"
+                className="w-full rounded border border-black/20 px-3 py-2 text-sm font-mono focus:outline-none focus:border-enbridge-black"
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Task / WBS (legacy)" hint="Optional — kept for backwards compat">
               <input
                 value={form.task_wbs}
                 onChange={(e) => setForm({ ...form, task_wbs: e.target.value })}
-                placeholder="04.P1.W.WMI.XXX"
+                placeholder="Optional legacy task identifier"
                 className="w-full rounded border border-black/20 px-3 py-2 text-sm font-mono focus:outline-none focus:border-enbridge-black"
                 autoComplete="off"
               />
             </Field>
             <Field
               label="Scope / description"
-              hint="Optional — shown in the dashboard's description column"
+              hint="Shown in the dashboard's description column"
               className="sm:col-span-2"
             >
               <textarea

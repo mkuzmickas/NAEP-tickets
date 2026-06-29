@@ -7,6 +7,7 @@ type RawRow = {
   vendor_display_name: string;
   scope: string | null;
   task_wbs: string | null;
+  project_cost_code: string | null;
   committed: string | number;
   lem_to_date: string | number;
   remaining: string | number;
@@ -33,6 +34,7 @@ export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
     vendor_display_name: r.vendor_display_name,
     scope: r.scope,
     task_wbs: r.task_wbs,
+    project_cost_code: r.project_cost_code,
     committed: n(r.committed),
     lem_to_date: n(r.lem_to_date),
     remaining: n(r.remaining),

@@ -10,7 +10,7 @@ Return ONLY a JSON object with this exact schema. No markdown, no commentary, no
   "po_number": string,
   "vendor_legal_name": string,
   "vendor_display_name": string,
-  "task_wbs": string,
+  "project_cost_code": string,
   "scope": string,
   "committed_amount": number
 }
@@ -26,8 +26,10 @@ Rules:
   - ALBRIGHT FLUSH SYSTEMS LTD -> Albright Flush
   - VECTOR GEOMATICS LAND SURVEYING LTD -> Vector Geomatics
   - LAPRAIRIE CRANE -> LaPrairie Crane
+  - GREAT NORTHERN BRIDGEWORKS LTD -> Great Northern
+  - SURELINE PROJECTS INC -> Sureline
   Apply the same style to unfamiliar vendors.
-- task_wbs: WBS/GL/task code, typically formatted like 04.P1.W.WMI.299 or similar. If multiple appear, choose the primary one. If absent, return "".
+- project_cost_code: the Enbridge cost code in the format NN.XX.X.XXX.XXX or similar (e.g. 04.P1.W.CST.130.502, 04.P1.W.WMI.299, 02.S1.W.WMI.244, 05.CO.W.WMI.244). Look for labels like "GL #", "WBS", "Task Number", "Cost Code", or "Project Cost Code" on the PO document. If multiple appear, choose the primary one tied to the main scope of work. Preserve the case exactly as printed (some codes use uppercase CO, some lowercase). If absent, return "".
 - scope: a 1-2 sentence description of what the PO covers. Synthesize from the scope/description/work narrative text on the PO.
 - committed_amount: the total PO value as cut by procurement (the maximum dollar value committed). Look for "Total Order Value", "PO Total", "Committed Amount", "Total Authorized", or a single grand-total figure on the PO itself. Do NOT use field-order or field-ticket totals — those are individual draws against the PO, not the PO committed amount. If the document is a field ticket rather than a PO, return 0 for committed_amount and put a note in scope saying so.
 
@@ -39,7 +41,7 @@ export type ParsedPo = {
   po_number: string;
   vendor_legal_name: string;
   vendor_display_name: string;
-  task_wbs: string;
+  project_cost_code: string;
   scope: string;
   committed_amount: number;
 };

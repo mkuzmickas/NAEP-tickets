@@ -7,6 +7,7 @@ type PatchBody = {
   vendor_legal_name?: string;
   vendor_display_name?: string;
   task_wbs?: string | null;
+  project_cost_code?: string | null;
   scope?: string | null;
   committed_amount?: number;
 };
@@ -44,6 +45,10 @@ export async function PATCH(
   if (body.task_wbs !== undefined) {
     const v = (body.task_wbs ?? '').trim();
     updates.task_wbs = v || null;
+  }
+  if (body.project_cost_code !== undefined) {
+    const v = (body.project_cost_code ?? '').trim();
+    updates.project_cost_code = v || null;
   }
   if (body.scope !== undefined) {
     const v = (body.scope ?? '').trim();

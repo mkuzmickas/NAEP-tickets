@@ -4,6 +4,7 @@ export type ServicePO = {
   vendor_legal_name: string;
   vendor_display_name: string;
   task_wbs: string | null;
+  project_cost_code: string | null;
   scope: string | null;
   committed_amount: number;
   ap_invoiced_amount: number;
@@ -60,6 +61,7 @@ export type ActivePoSummary = {
   vendor_display_name: string;
   scope: string | null;
   task_wbs: string | null;
+  project_cost_code: string | null;
   committed: number;
   lem_to_date: number;
   remaining: number;

@@ -7,6 +7,7 @@ import type { ActivePoSummary } from '@/types/database';
 
 type SortKey =
   | 'po_number'
+  | 'project_cost_code'
   | 'vendor_display_name'
   | 'committed'
   | 'lem_to_date'
@@ -43,7 +44,8 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
         (r) =>
           r.po_number.toLowerCase().includes(q) ||
           r.vendor_display_name.toLowerCase().includes(q) ||
-          (r.scope ?? '').toLowerCase().includes(q)
+          (r.scope ?? '').toLowerCase().includes(q) ||
+          (r.project_cost_code ?? '').toLowerCase().includes(q)
       );
     }
     if (vendorFilter !== 'all') {
@@ -101,7 +103,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search PO #, vendor, or description"
+            placeholder="Search PO #, cost code, vendor, or description"
             className="rounded border border-black/20 px-3 py-1.5 text-sm focus:outline-none focus:border-enbridge-black"
           />
           <select
@@ -136,6 +138,13 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 onClick={() => toggleSort('po_number')}
               >
                 PO Number
+              </SortableTh>
+              <SortableTh
+                active={sortKey === 'project_cost_code'}
+                dir={sortDir}
+                onClick={() => toggleSort('project_cost_code')}
+              >
+                Project Cost Code
               </SortableTh>
               <SortableTh
                 active={sortKey === 'vendor_display_name'}
@@ -190,6 +199,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 title={`Click to see all tickets for ${r.po_number}`}
               >
                 <Td mono>{r.po_number}</Td>
+                <Td mono>{r.project_cost_code ?? '—'}</Td>
                 <Td>{r.vendor_display_name}</Td>
                 <Td className="max-w-xs">
                   <span className="text-enbridge-black/80 line-clamp-2">
@@ -205,7 +215,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
                 >
                   {rows.length === 0
