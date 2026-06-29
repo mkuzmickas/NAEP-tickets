@@ -7,22 +7,22 @@ export function KpiCards({ totals }: { totals: DashboardTotals }) {
       <Card
         label="LEM-to-Date"
         value={formatMoney(totals.totalLem)}
-        sub={`${formatPct(totals.pctOfActiveCommitment)} of active commitment`}
+        sub={`${formatPct(totals.pctOfActiveCommitment)} of total commitment`}
       />
       <Card
         label="PO Committed"
         value={formatMoney(totals.totalCommitted)}
-        sub={`${totals.activePoCount} active ${totals.activePoCount === 1 ? 'PO' : 'POs'}`}
+        sub={`${totals.activePoCount} ${totals.activePoCount === 1 ? 'PO' : 'POs'}`}
       />
       <Card
         label="Remaining"
         value={formatMoney(totals.totalRemaining)}
-        sub="against active commitment"
+        sub="against total commitment"
       />
       <Card
         label="Tickets Processed"
         value={String(totals.totalTickets)}
-        sub={`${totals.activeVendorCount} active ${totals.activeVendorCount === 1 ? 'vendor' : 'vendors'}`}
+        sub={`${totals.activeVendorCount} ${totals.activeVendorCount === 1 ? 'vendor' : 'vendors'}`}
       />
     </div>
   );

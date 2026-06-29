@@ -88,7 +88,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
       <div className="px-5 py-3 border-b border-black/10 space-y-3">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
           <h2 className="text-base font-semibold tracking-tight">
-            Active Purchase Orders
+            Purchase Orders
           </h2>
           <span className="text-xs text-enbridge-black/55 tabular-nums">
             Showing <strong>{filtered.length}</strong> of {rows.length} · LEM
@@ -189,14 +189,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 className="border-t border-black/5 hover:bg-enbridge-paper/60 cursor-pointer"
                 title={`Click to see all tickets for ${r.po_number}`}
               >
-                <Td mono>
-                  {r.po_number}
-                  {r.ticket_count === 0 && (
-                    <span className="ml-1 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-900 px-1 py-0.5 rounded">
-                      override
-                    </span>
-                  )}
-                </Td>
+                <Td mono>{r.po_number}</Td>
                 <Td>{r.vendor_display_name}</Td>
                 <Td className="max-w-xs">
                   <span className="text-enbridge-black/80 line-clamp-2">
@@ -216,7 +209,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                   className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
                 >
                   {rows.length === 0
-                    ? 'No active POs yet. A PO becomes active once its first ticket is logged.'
+                    ? 'No POs on file yet. Add one in the POs admin page.'
                     : 'No POs match the current filters.'}
                 </td>
               </tr>

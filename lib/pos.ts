@@ -8,9 +8,6 @@ export type PoReferenceRow = {
   scope: string | null;
   task_wbs: string | null;
   committed_amount: number;
-  manual_active_override: boolean;
-  has_tickets: boolean;
-  is_active: boolean;
 };
 
 type RawRow = Omit<PoReferenceRow, 'committed_amount'> & {
@@ -22,7 +19,6 @@ export async function getAllPos(): Promise<PoReferenceRow[]> {
   const { data, error } = await supabase
     .from('v_po_reference')
     .select('*')
-    .order('is_active', { ascending: false })
     .order('committed_amount', { ascending: false });
 
   if (error) {
@@ -38,8 +34,5 @@ export async function getAllPos(): Promise<PoReferenceRow[]> {
     scope: r.scope,
     task_wbs: r.task_wbs,
     committed_amount: Number(r.committed_amount),
-    manual_active_override: r.manual_active_override,
-    has_tickets: r.has_tickets,
-    is_active: r.is_active,
   }));
 }
