@@ -15,6 +15,7 @@ const MONTHS_SHORT = [
 const GROUP_LABELS: Record<string, string> = {
   'GRP-FOREMOST': 'Foremost 750 bbl Tanks',
   'GRP-CADO-AIR': 'Cado Start Air Skid',
+  'GRP-OPSCO-SALES': 'OPSCO Sales Skid',
 };
 
 function isoAdd(iso: string, days: number): string {
