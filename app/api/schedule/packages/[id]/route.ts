@@ -27,7 +27,7 @@ export async function PATCH(
     );
   }
 
-  const val = body.planned_ship_date;
+  const val: string | null = body.planned_ship_date ?? null;
   if (val !== null && !/^\d{4}-\d{2}-\d{2}$/.test(val)) {
     return NextResponse.json(
       { error: 'planned_ship_date must be YYYY-MM-DD or null' },
