@@ -12,6 +12,11 @@ const MONTHS_SHORT = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+const GROUP_LABELS: Record<string, string> = {
+  'GRP-FOREMOST': 'Foremost 750 bbl Tanks',
+  'GRP-CADO-AIR': 'Cado Start Air Skid',
+};
+
 function isoAdd(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
@@ -513,7 +518,7 @@ function GroupChip({
   const anyOver = members.some((m) => m.is_over_height);
   const cls = anyRack ? 'bg-[#E8EFF6] border-[#c2d4e6]' : 'bg-[#FBEEE0] border-[#ecd2b3]';
   const overCls = anyOver ? '!bg-[#f5ff00] !border-[#c9d400]' : '';
-  const gname = 'Foremost 750 bbl Tanks';
+  const gname = GROUP_LABELS[group] ?? group;
   return (
     <div
       draggable
@@ -533,7 +538,7 @@ function GroupChip({
       <div className="mt-1 flex flex-col gap-0.5">
         {members.map((m) => (
           <div key={m.id} className="text-[10px] px-1.5 py-0.5 bg-white/60 rounded border border-black/5 flex justify-between gap-1.5">
-            <span>{m.tag.replace(/\s*\(Foremost.*$/i, '')}</span>
+            <span>{m.tag.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()}</span>
             <span className="text-enbridge-black/55 tabular-nums">{m.height_ft}′ · {fmtWeight(m.weight_lbs)}</span>
           </div>
         ))}
