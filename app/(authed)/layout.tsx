@@ -11,10 +11,10 @@ export default async function AuthedLayout({ children }: { children: React.React
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="h-1 bg-enbridge-yellow" />
+    <div className="h-screen flex flex-col overflow-hidden">
+      <div className="h-1 bg-enbridge-yellow shrink-0" />
       <TopBar userEmail={user.email ?? ''} />
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+      <main className="flex-1 min-h-0 w-full">
         {children}
       </main>
     </div>

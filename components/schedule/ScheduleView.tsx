@@ -214,7 +214,7 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem-4px)] text-[13px] leading-snug">
+    <div className="flex h-full w-full text-[13px] leading-snug">
       <aside className="w-[420px] min-w-[420px] bg-white border-r border-black/15 flex flex-col overflow-hidden">
         <div className="px-4 pt-3 pb-2 border-b border-black/10">
           <div className="text-[11px] uppercase tracking-wide text-enbridge-black/55 font-semibold">On screen now</div>
