@@ -43,6 +43,7 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
   const [dragGroup, setDragGroup] = useState<string | null>(null);
   const calWrapRef = useRef<HTMLDivElement>(null);
   const [visibleYMs, setVisibleYMs] = useState<Set<string>>(new Set());
+  const [panelOpen, setPanelOpen] = useState(true);
 
   useEffect(() => setPackages(initialPackages), [initialPackages]);
 
@@ -215,10 +216,25 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
 
   return (
     <div className="flex h-full w-full text-[13px] leading-snug">
-      <aside className="w-[420px] min-w-[420px] bg-white border-r border-black/15 flex flex-col overflow-hidden">
-        <div className="px-4 pt-3 pb-2 border-b border-black/10">
-          <div className="text-[11px] uppercase tracking-wide text-enbridge-black/55 font-semibold">On screen now</div>
-          <div className="text-xs font-semibold">
+      {!panelOpen && (
+        <button
+          onClick={() => setPanelOpen(true)}
+          title="Show side panel"
+          aria-label="Show side panel"
+          className="w-7 shrink-0 bg-white border-r border-black/15 hover:bg-black/[0.03] flex items-center justify-center text-enbridge-black/50 hover:text-enbridge-black"
+        >
+          <span className="rotate-90 text-[10px] uppercase tracking-widest whitespace-nowrap">▸ Side panel</span>
+        </button>
+      )}
+      <aside
+        className={`bg-white border-r border-black/15 flex flex-col overflow-hidden transition-all ${
+          panelOpen ? 'w-[420px] min-w-[420px]' : 'w-0 min-w-0 border-r-0 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="px-4 pt-3 pb-2 border-b border-black/10 flex items-baseline justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wide text-enbridge-black/55 font-semibold">On screen now</div>
+            <div className="text-xs font-semibold">
             {visibleYMs.size === 0 ? '—' : (
               <>
                 {(() => {
@@ -234,6 +250,15 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
               </>
             )}
           </div>
+          </div>
+          <button
+            onClick={() => setPanelOpen(false)}
+            title="Hide side panel to expand calendar"
+            aria-label="Hide side panel"
+            className="shrink-0 text-enbridge-black/40 hover:text-enbridge-black/70 text-sm leading-none px-1 py-0.5 rounded hover:bg-black/[0.05]"
+          >
+            ◂
+          </button>
         </div>
 
         <details className="border-b border-black/10" open={unscheduledCount > 0}>
