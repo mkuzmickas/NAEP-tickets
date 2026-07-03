@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import type { SchedulePackage } from '@/types/schedule';
+import type { SchedulePackage, ScheduleWalkdown } from '@/types/schedule';
 
 type RawPkg = Omit<
   SchedulePackage,
@@ -47,5 +47,30 @@ export async function getAllPackages(): Promise<SchedulePackage[]> {
     is_over_height: r.is_over_height,
     convoy_group: r.convoy_group,
     sort_order: r.sort_order,
+  }));
+}
+
+type RawWalkdown = {
+  id: string;
+  event_date: string;
+  level: number;
+  name: string;
+};
+
+export async function getAllWalkdowns(): Promise<ScheduleWalkdown[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('schedule_walkdowns')
+    .select('id, event_date, level, name')
+    .order('event_date', { ascending: true });
+  if (error) {
+    console.error('getAllWalkdowns failed:', error);
+    throw new Error(`Failed to fetch walkdowns: ${error.message}`);
+  }
+  return (data as RawWalkdown[]).map((r) => ({
+    id: r.id,
+    event_date: r.event_date,
+    level: r.level as 30 | 60 | 90,
+    name: r.name,
   }));
 }

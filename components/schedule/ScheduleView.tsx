@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { SchedulePackage } from '@/types/schedule';
+import type { SchedulePackage, ScheduleWalkdown } from '@/types/schedule';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -42,16 +42,43 @@ type Unit =
   | { kind: 'item'; pkg: SchedulePackage }
   | { kind: 'group'; group: string; members: SchedulePackage[] };
 
-export function ScheduleView({ initialPackages }: { initialPackages: SchedulePackage[] }) {
+type WalkdownLevel = 30 | 60 | 90;
+
+type WalkdownModalState = {
+  mode: 'create' | 'edit';
+  id?: string;
+  date: string;
+  level: WalkdownLevel;
+  name: string;
+};
+
+const WD_STYLES: Record<WalkdownLevel, { bg: string; text: string; border: string; solid: string }> = {
+  30: { bg: 'bg-green-100',  text: 'text-green-900',  border: 'border-green-300',  solid: 'bg-green-600' },
+  60: { bg: 'bg-yellow-100', text: 'text-yellow-900', border: 'border-yellow-300', solid: 'bg-yellow-500' },
+  90: { bg: 'bg-red-100',    text: 'text-red-900',    border: 'border-red-300',    solid: 'bg-red-600' },
+};
+
+export function ScheduleView({
+  initialPackages,
+  initialWalkdowns,
+}: {
+  initialPackages: SchedulePackage[];
+  initialWalkdowns: ScheduleWalkdown[];
+}) {
   const [packages, setPackages] = useState<SchedulePackage[]>(initialPackages);
+  const [walkdowns, setWalkdowns] = useState<ScheduleWalkdown[]>(initialWalkdowns);
   const [toast, setToast] = useState<string>('');
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragGroup, setDragGroup] = useState<string | null>(null);
   const calWrapRef = useRef<HTMLDivElement>(null);
   const [visibleYMs, setVisibleYMs] = useState<Set<string>>(new Set());
   const [panelOpen, setPanelOpen] = useState(true);
+  const [showPackages, setShowPackages] = useState(true);
+  const [showWalkdowns, setShowWalkdowns] = useState(true);
+  const [walkdownModal, setWalkdownModal] = useState<WalkdownModalState | null>(null);
 
   useEffect(() => setPackages(initialPackages), [initialPackages]);
+  useEffect(() => setWalkdowns(initialWalkdowns), [initialWalkdowns]);
 
   const monthRange = useMemo(() => {
     const dates = packages.map((p) => p.planned_ship_date).filter((d): d is string => !!d).sort();
@@ -171,6 +198,92 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
     members.forEach((m) => {
       persistDate(m.id, targetISO, prevMap.get(m.id) ?? null);
     });
+  }
+
+  const walkdownsByDate = useMemo(() => {
+    const m = new Map<string, ScheduleWalkdown[]>();
+    walkdowns.forEach((w) => {
+      const arr = m.get(w.event_date) || [];
+      arr.push(w);
+      m.set(w.event_date, arr);
+    });
+    return m;
+  }, [walkdowns]);
+
+  async function saveWalkdown(state: WalkdownModalState) {
+    const trimmedName = state.name.trim();
+    if (!trimmedName) {
+      showToast('Walk-down name is required.');
+      return;
+    }
+    if (state.mode === 'create') {
+      const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic: ScheduleWalkdown = { id: tempId, event_date: state.date, level: state.level, name: trimmedName };
+      setWalkdowns((prev) => [...prev, optimistic]);
+      setWalkdownModal(null);
+      try {
+        const res = await fetch('/api/schedule/walkdowns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event_date: state.date, level: state.level, name: trimmedName }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Save failed (${res.status})`);
+        }
+        const { walkdown } = await res.json();
+        setWalkdowns((prev) => prev.map((w) => (w.id === tempId ? walkdown : w)));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        showToast(`Walk-down save failed: ${msg}`);
+        setWalkdowns((prev) => prev.filter((w) => w.id !== tempId));
+      }
+    } else if (state.id) {
+      const prevList = walkdowns;
+      const editId = state.id;
+      setWalkdowns((prev) => prev.map((w) => (w.id === editId ? { ...w, level: state.level, name: trimmedName } : w)));
+      setWalkdownModal(null);
+      try {
+        const res = await fetch(`/api/schedule/walkdowns/${editId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ level: state.level, name: trimmedName }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Save failed (${res.status})`);
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        showToast(`Walk-down save failed: ${msg}`);
+        setWalkdowns(prevList);
+      }
+    }
+  }
+
+  async function deleteWalkdown(id: string) {
+    const prevList = walkdowns;
+    setWalkdowns((prev) => prev.filter((w) => w.id !== id));
+    setWalkdownModal(null);
+    try {
+      const res = await fetch(`/api/schedule/walkdowns/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Delete failed (${res.status})`);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(`Walk-down delete failed: ${msg}`);
+      setWalkdowns(prevList);
+    }
+  }
+
+  function openCreateWalkdown(date: string) {
+    setWalkdownModal({ mode: 'create', date, level: 30, name: '' });
+  }
+
+  function openEditWalkdown(wd: ScheduleWalkdown) {
+    setWalkdownModal({ mode: 'edit', id: wd.id, date: wd.event_date, level: wd.level, name: wd.name });
   }
 
   useEffect(() => {
@@ -359,10 +472,29 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
             <span className="font-bold text-[15px]">ACGS Ship Schedule — Aitken Creek</span>
             <span className="text-[11px] text-enbridge-black/55">Planned Ship date · Foremost tanks convoy together · yellow = over-height &gt; 13 ft</span>
           </div>
-          <div className="flex gap-3 items-center text-[11px] text-enbridge-black/55">
-            <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#1F4E79]" />Pipe Rack (EWP 8)</span>
-            <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#C2691C]" />Other EWP</span>
-            <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#f5ff00] border border-[#c9d400]" />Over-height &gt;13′</span>
+          <div className="flex gap-1.5 items-center">
+            <button
+              onClick={() => setShowPackages((v) => !v)}
+              title="Toggle Packages layer"
+              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors font-medium ${
+                showPackages
+                  ? 'bg-[#1F4E79] text-white border-[#1F4E79]'
+                  : 'bg-white text-enbridge-black/60 border-black/20 hover:bg-black/[0.03]'
+              }`}
+            >
+              {showPackages ? '● ' : '○ '}Packages
+            </button>
+            <button
+              onClick={() => setShowWalkdowns((v) => !v)}
+              title="Toggle Walk-downs layer"
+              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors font-medium ${
+                showWalkdowns
+                  ? 'bg-[#3f9142] text-white border-[#3f9142]'
+                  : 'bg-white text-enbridge-black/60 border-black/20 hover:bg-black/[0.03]'
+              }`}
+            >
+              {showWalkdowns ? '● ' : '○ '}Walk-downs
+            </button>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
             <label className="text-[11px] text-enbridge-black/55">Jump to</label>
@@ -414,12 +546,16 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
                       const outOfMonth = d.getMonth() !== m;
                       if (outOfMonth) return <div key={i} className="border-0" />;
                       const units = unitsForDate(iso);
+                      const dayWalkdowns = walkdownsByDate.get(iso) || [];
                       return (
                         <Cell
                           key={i}
                           dateISO={iso}
                           dayNum={d.getDate()}
                           units={units}
+                          walkdowns={dayWalkdowns}
+                          showPackages={showPackages}
+                          showWalkdowns={showWalkdowns}
                           floorForDrag={() => {
                             if (dragGroup) return groupRTS(dragGroup);
                             if (dragId) {
@@ -436,6 +572,8 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
                           onChipDragStart={(id) => { setDragId(id); setDragGroup(null); }}
                           onGroupDragStart={(g) => { setDragGroup(g); setDragId(null); }}
                           onDragEnd={() => { setDragId(null); setDragGroup(null); }}
+                          onCreateWalkdown={openCreateWalkdown}
+                          onEditWalkdown={openEditWalkdown}
                         />
                       );
                     })}
@@ -446,15 +584,16 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
           </div>
         </div>
 
-        <div className="bg-white border-t border-black/10 px-5 py-2 text-[11px] text-enbridge-black/70 flex items-center justify-between">
+        <div className="bg-white border-t border-black/10 px-5 py-2 text-[11px] text-enbridge-black/70 flex items-center justify-between gap-4 flex-wrap">
           <span>
             <strong>{scheduledCount}</strong> scheduled ·{' '}
             <strong>{unscheduledCount}</strong> unscheduled ·{' '}
             <strong>{packages.length}</strong> total ·{' '}
-            <strong className="bg-[#f5ff00] text-black px-1.5 py-0.5 rounded">{overHeightCount}</strong> over-height
+            <strong className="bg-[#f5ff00] text-black px-1.5 py-0.5 rounded">{overHeightCount}</strong> over-height ·{' '}
+            <strong className="text-[#3f9142]">{walkdowns.length}</strong> walk-down{walkdowns.length === 1 ? '' : 's'}
           </span>
           <span className="text-enbridge-black/50 italic">
-            Changes save automatically. Export / walkdowns / print / search coming in v2.
+            Changes save automatically. Click a day (when Walk-downs layer is on) to add a milestone.
           </span>
         </div>
       </div>
@@ -465,6 +604,122 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
           <span>{toast}</span>
         </div>
       )}
+
+      {walkdownModal && (
+        <WalkdownModal
+          state={walkdownModal}
+          onChange={setWalkdownModal}
+          onCancel={() => setWalkdownModal(null)}
+          onSave={() => saveWalkdown(walkdownModal)}
+          onDelete={walkdownModal.mode === 'edit' && walkdownModal.id ? () => deleteWalkdown(walkdownModal.id!) : undefined}
+        />
+      )}
+    </div>
+  );
+}
+
+function WalkdownChip({ wd, onClick }: { wd: ScheduleWalkdown; onClick: () => void }) {
+  const s = WD_STYLES[wd.level];
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={`w-full text-left rounded border ${s.bg} ${s.text} ${s.border} px-1.5 py-0.5 text-[10px] font-semibold flex items-center gap-1 hover:brightness-95`}
+      title={`${wd.level}% walk-down · click to edit`}
+    >
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${s.solid}`} />
+      <span className="truncate">{wd.level}% · {wd.name}</span>
+    </button>
+  );
+}
+
+function WalkdownModal({
+  state, onChange, onCancel, onSave, onDelete,
+}: {
+  state: WalkdownModalState;
+  onChange: (next: WalkdownModalState) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-lg shadow-2xl w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 border-b border-black/10">
+          <h3 className="text-sm font-semibold">
+            {state.mode === 'create' ? 'Add walk-down' : 'Edit walk-down'}
+          </h3>
+          <div className="text-[11px] text-enbridge-black/55 mt-0.5">{prettyDate(state.date)}</div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-[11px] font-medium text-enbridge-black/70 uppercase tracking-wide mb-1.5">Level</label>
+            <div className="flex gap-1.5">
+              {[30, 60, 90].map((lvl) => {
+                const s = WD_STYLES[lvl as WalkdownLevel];
+                const active = state.level === lvl;
+                return (
+                  <button
+                    key={lvl}
+                    onClick={() => onChange({ ...state, level: lvl as WalkdownLevel })}
+                    className={`flex-1 text-xs rounded border py-2 font-semibold transition-colors ${
+                      active
+                        ? `${s.bg} ${s.text} ${s.border} ring-2 ring-offset-1 ring-black/20`
+                        : 'bg-white border-black/15 text-enbridge-black/50 hover:bg-black/[0.03]'
+                    }`}
+                  >
+                    <span className={`inline-block w-2 h-2 rounded-full ${s.solid} mr-1 align-middle`} />
+                    {lvl}%
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <label htmlFor="wd-name" className="block text-[11px] font-medium text-enbridge-black/70 uppercase tracking-wide mb-1.5">Name</label>
+            <input
+              id="wd-name"
+              type="text"
+              autoFocus
+              value={state.name}
+              onChange={(e) => onChange({ ...state, name: e.target.value })}
+              placeholder="e.g. Refrigeration package"
+              className="w-full rounded border border-black/20 px-3 py-2 text-sm focus:outline-none focus:border-enbridge-black"
+              onKeyDown={(e) => { if (e.key === 'Enter' && state.name.trim()) onSave(); }}
+            />
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-black/10 flex items-center justify-between gap-2">
+          {onDelete ? (
+            <button
+              onClick={onDelete}
+              className="text-xs text-red-700 hover:text-red-900 underline"
+            >
+              Delete
+            </button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 text-xs rounded border border-black/15 hover:bg-enbridge-paper"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onSave}
+              disabled={!state.name.trim()}
+              className="px-3 py-1.5 text-xs rounded bg-enbridge-black text-white hover:bg-enbridge-black/90 disabled:opacity-50 font-semibold"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -549,20 +804,29 @@ function GroupChip({
 }
 
 function Cell({
-  dateISO, dayNum, units, floorForDrag,
+  dateISO, dayNum, units, walkdowns, showPackages, showWalkdowns, floorForDrag,
   onDropItem, onDropGroup, onChipDragStart, onGroupDragStart, onDragEnd,
+  onCreateWalkdown, onEditWalkdown,
 }: {
   dateISO: string;
   dayNum: number;
   units: Unit[];
+  walkdowns: ScheduleWalkdown[];
+  showPackages: boolean;
+  showWalkdowns: boolean;
   floorForDrag: () => string | null;
   onDropItem: (id: string, target: string) => void;
   onDropGroup: (g: string, target: string) => void;
   onChipDragStart: (id: string) => void;
   onGroupDragStart: (g: string) => void;
   onDragEnd: () => void;
+  onCreateWalkdown: (date: string) => void;
+  onEditWalkdown: (wd: ScheduleWalkdown) => void;
 }) {
   const [drag, setDrag] = useState<'idle' | 'valid' | 'invalid'>('idle');
+  const packageCount = showPackages ? units.length : 0;
+  const walkdownCount = showWalkdowns ? walkdowns.length : 0;
+  const badgeCount = packageCount + walkdownCount;
   return (
     <div
       onDragOver={(e) => {
@@ -585,15 +849,27 @@ function Cell({
     >
       <div className="text-[11px] text-enbridge-black/55 font-semibold flex justify-between px-1 pt-0.5 pb-1">
         <span>{dayNum}</span>
-        {units.length > 0 && <span className="text-[10px]">{units.length}</span>}
+        {badgeCount > 0 && <span className="text-[10px]">{badgeCount}</span>}
       </div>
       <div className="flex flex-col gap-1">
-        {units.map((u) =>
+        {showWalkdowns && walkdowns.map((wd) => (
+          <WalkdownChip key={wd.id} wd={wd} onClick={() => onEditWalkdown(wd)} />
+        ))}
+        {showPackages && units.map((u) =>
           u.kind === 'item' ? (
             <Chip key={u.pkg.id} pkg={u.pkg} inTray={false} onDragStart={onChipDragStart} onDragEnd={onDragEnd} />
           ) : (
             <GroupChip key={u.group} group={u.group} members={u.members} inTray={false} onDragStart={onGroupDragStart} onDragEnd={onDragEnd} />
           )
+        )}
+        {showWalkdowns && (
+          <button
+            onClick={() => onCreateWalkdown(dateISO)}
+            className="mt-0.5 text-[10px] text-enbridge-black/40 hover:text-[#3f9142] hover:bg-green-50 rounded py-0.5 border border-dashed border-transparent hover:border-green-300 transition-colors"
+            title="Add a walk-down milestone on this day"
+          >
+            + Walk-down
+          </button>
         )}
       </div>
     </div>
