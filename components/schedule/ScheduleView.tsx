@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SchedulePackage } from '@/types/schedule';
 
 const MONTHS = [
@@ -285,7 +285,7 @@ export function ScheduleView({ initialPackages }: { initialPackages: SchedulePac
                 <tr><td colSpan={4} className="text-center text-enbridge-black/55 italic py-6 text-xs">No scheduled packages in view.</td></tr>
               ) : (
                 (() => {
-                  const rows: React.ReactNode[] = [];
+                  const rows: ReactNode[] = [];
                   let lastMonth = '';
                   visibleScheduledRows.forEach((p) => {
                     const mk = p.planned_ship_date!.slice(0, 7);
