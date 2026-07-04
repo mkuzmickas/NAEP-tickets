@@ -170,6 +170,36 @@ export function ScheduleView({
     }
   }
 
+  async function updateRts(pkgId: string, newRts: string | null) {
+    const pkg = packages.find((p) => p.id === pkgId);
+    if (!pkg) return;
+    if (newRts === (pkg.rts_date ?? null)) return;
+    const prev = pkg.rts_date;
+    setPackages((prevPkgs) => prevPkgs.map((p) => (p.id === pkgId ? { ...p, rts_date: newRts } : p)));
+    try {
+      const res = await fetch(`/api/schedule/packages/${pkgId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rts_date: newRts }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Save failed (${res.status})`);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(`RTS save failed: ${msg}. Reverting.`);
+      setPackages((prevPkgs) => prevPkgs.map((p) => (p.id === pkgId ? { ...p, rts_date: prev } : p)));
+    }
+  }
+
+  function updateShipFromTable(pkgId: string, newShip: string | null) {
+    const pkg = packages.find((p) => p.id === pkgId);
+    if (!pkg) return;
+    if (newShip === (pkg.planned_ship_date ?? null)) return;
+    moveItem(pkg, newShip);
+  }
+
   function moveItem(pkg: SchedulePackage, targetISO: string | null) {
     if (targetISO && pkg.rts_date && targetISO < pkg.rts_date) {
       showToast(
@@ -451,9 +481,13 @@ export function ScheduleView({
                           {p.is_over_height && <span className="ml-1 bg-black text-[#f5ff00] text-[9px] font-bold px-1 rounded">OH</span>}
                           {p.convoy_group && <span className="ml-1 text-enbridge-black/55">⊕</span>}
                         </td>
-                        <td className="px-2 py-1.5 align-top whitespace-nowrap tabular-nums text-enbridge-black/80">{prettyDate(p.rts_date)}</td>
-                        <td className="px-2 py-1.5 align-top whitespace-nowrap tabular-nums text-enbridge-black/80">{prettyDate(p.planned_ship_date)}</td>
-                        <td className="px-2 py-1.5 align-top whitespace-nowrap tabular-nums font-semibold">{prettyDate(p.planned_ship_date ? isoAdd(p.planned_ship_date, 2) : null)}</td>
+                        <td className="px-2 py-1.5 align-top whitespace-nowrap tabular-nums text-enbridge-black/80">
+                          <EditableDate value={p.rts_date} onSave={(v) => updateRts(p.id, v)} />
+                        </td>
+                        <td className="px-2 py-1.5 align-top whitespace-nowrap tabular-nums text-enbridge-black/80">
+                          <EditableDate value={p.planned_ship_date} onSave={(v) => updateShipFromTable(p.id, v)} />
+                        </td>
+                        <td className="px-2 py-1.5 align-top whitespace-nowrap tabular-nums font-semibold text-enbridge-black/70">{prettyDate(p.planned_ship_date ? isoAdd(p.planned_ship_date, 2) : null)}</td>
                       </tr>
                     );
                   });
@@ -615,6 +649,58 @@ export function ScheduleView({
         />
       )}
     </div>
+  );
+}
+
+function EditableDate({
+  value, onSave,
+}: {
+  value: string | null;
+  onSave: (v: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(value ?? '');
+
+  useEffect(() => {
+    if (!editing) setDraft(value ?? '');
+  }, [value, editing]);
+
+  function commit() {
+    setEditing(false);
+    const next = draft || null;
+    if (next !== (value ?? null)) onSave(next);
+  }
+
+  function cancel() {
+    setEditing(false);
+    setDraft(value ?? '');
+  }
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        title="Click to edit"
+        className="text-left rounded px-1 py-0.5 hover:bg-black/[0.04] hover:ring-1 hover:ring-black/10 tabular-nums min-w-[80px]"
+      >
+        {prettyDate(value)}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      type="date"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        else if (e.key === 'Escape') cancel();
+      }}
+      className="rounded border border-enbridge-black px-1 py-0.5 text-[11px] w-[120px] bg-white focus:outline-none"
+    />
   );
 }
 

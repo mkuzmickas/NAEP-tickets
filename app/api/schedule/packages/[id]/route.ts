@@ -5,7 +5,12 @@ export const runtime = 'nodejs';
 
 type PatchBody = {
   planned_ship_date?: string | null;
+  rts_date?: string | null;
 };
+
+function isValidDate(v: unknown): v is string {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
 
 export async function PATCH(
   req: Request,
@@ -20,26 +25,45 @@ export async function PATCH(
   }
 
   const body = (await req.json().catch(() => null)) as PatchBody | null;
-  if (!body || !('planned_ship_date' in body)) {
-    return NextResponse.json(
-      { error: 'planned_ship_date is required (string YYYY-MM-DD or null)' },
-      { status: 400 }
-    );
+  if (!body) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
 
-  const val: string | null = body.planned_ship_date ?? null;
-  if (val !== null && !/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-    return NextResponse.json(
-      { error: 'planned_ship_date must be YYYY-MM-DD or null' },
-      { status: 400 }
-    );
+  const updates: Record<string, unknown> = {};
+
+  if ('planned_ship_date' in body) {
+    const val: string | null = body.planned_ship_date ?? null;
+    if (val !== null && !isValidDate(val)) {
+      return NextResponse.json(
+        { error: 'planned_ship_date must be YYYY-MM-DD or null' },
+        { status: 400 }
+      );
+    }
+    updates.planned_ship_date = val;
   }
+
+  if ('rts_date' in body) {
+    const val: string | null = body.rts_date ?? null;
+    if (val !== null && !isValidDate(val)) {
+      return NextResponse.json(
+        { error: 'rts_date must be YYYY-MM-DD or null' },
+        { status: 400 }
+      );
+    }
+    updates.rts_date = val;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+  }
+
+  updates.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
     .from('schedule_packages')
-    .update({ planned_ship_date: val, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq('id', params.id)
-    .select('id, planned_ship_date')
+    .select('id, rts_date, planned_ship_date')
     .single();
 
   if (error || !data) {
