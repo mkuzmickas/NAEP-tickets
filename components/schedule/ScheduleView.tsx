@@ -76,6 +76,14 @@ export function ScheduleView({
   const [showPackages, setShowPackages] = useState(true);
   const [showWalkdowns, setShowWalkdowns] = useState(true);
   const [walkdownModal, setWalkdownModal] = useState<WalkdownModalState | null>(null);
+  const [printModal, setPrintModal] = useState<{ from: string; to: string } | null>(null);
+  const [printRange, setPrintRange] = useState<{ from: string; to: string } | null>(null);
+
+  useEffect(() => {
+    const handler = () => setPrintRange(null);
+    window.addEventListener('afterprint', handler);
+    return () => window.removeEventListener('afterprint', handler);
+  }, []);
 
   useEffect(() => setPackages(initialPackages), [initialPackages]);
   useEffect(() => setWalkdowns(initialWalkdowns), [initialWalkdowns]);
@@ -363,20 +371,40 @@ export function ScheduleView({
     jumpTo(keyYM(t.getFullYear(), t.getMonth()));
   }
 
+  function openPrintModal() {
+    const yms = monthRange.map(([y, m]) => keyYM(y, m));
+    if (yms.length === 0) return;
+    const defaultFrom = yms.includes('2026-07') ? '2026-07' : yms[0];
+    const defaultTo = yms.includes('2026-09') ? '2026-09' : yms[Math.min(2, yms.length - 1)];
+    setPrintModal({ from: defaultFrom, to: defaultTo });
+  }
+
+  function doPrint() {
+    if (!printModal) return;
+    const yms = monthRange.map(([y, m]) => keyYM(y, m));
+    const fi = yms.indexOf(printModal.from);
+    const ti = yms.indexOf(printModal.to);
+    if (fi < 0 || ti < 0) return;
+    const [lo, hi] = fi <= ti ? [fi, ti] : [ti, fi];
+    setPrintRange({ from: yms[lo], to: yms[hi] });
+    setPrintModal(null);
+    setTimeout(() => window.print(), 100);
+  }
+
   return (
-    <div className="flex h-full w-full text-[13px] leading-snug">
+    <div className="schedule-root flex h-full w-full text-[13px] leading-snug">
       {!panelOpen && (
         <button
           onClick={() => setPanelOpen(true)}
           title="Show side panel"
           aria-label="Show side panel"
-          className="w-7 shrink-0 bg-white border-r border-black/15 hover:bg-black/[0.03] flex items-center justify-center text-enbridge-black/50 hover:text-enbridge-black"
+          className="schedule-toggle-rail w-7 shrink-0 bg-white border-r border-black/15 hover:bg-black/[0.03] flex items-center justify-center text-enbridge-black/50 hover:text-enbridge-black"
         >
           <span className="rotate-90 text-[10px] uppercase tracking-widest whitespace-nowrap">▸ Side panel</span>
         </button>
       )}
       <aside
-        className={`bg-white border-r border-black/15 flex flex-col overflow-hidden transition-all ${
+        className={`schedule-side bg-white border-r border-black/15 flex flex-col overflow-hidden transition-all ${
           panelOpen ? 'w-[420px] min-w-[420px]' : 'w-0 min-w-0 border-r-0 opacity-0 pointer-events-none'
         }`}
       >
@@ -500,7 +528,7 @@ export function ScheduleView({
       </aside>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="bg-white border-b border-black/15 px-5 py-3 flex items-center gap-4 flex-wrap">
+        <div className="schedule-toolbar bg-white border-b border-black/15 px-5 py-3 flex items-center gap-4 flex-wrap">
           <div className="h-6 w-1 bg-[#D04E00] rounded-sm" />
           <div className="flex flex-col">
             <span className="font-bold text-[15px]">ACGS Ship Schedule — Aitken Creek</span>
@@ -542,39 +570,63 @@ export function ScheduleView({
               ))}
             </select>
             <button onClick={goToday} className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]">Today</button>
+            <button
+              onClick={openPrintModal}
+              title="Print calendar to PDF (one month per landscape page)"
+              className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]"
+            >
+              🖨 Print…
+            </button>
           </div>
         </div>
 
-        <div ref={calWrapRef} className="flex-1 overflow-auto px-4 pb-10">
-          <div className="sticky top-0 z-[5] bg-[#f3f4f6] pt-3">
+        <div ref={calWrapRef} className="schedule-cal-wrap flex-1 overflow-auto px-4 pb-10">
+          <div className="schedule-weekdays sticky top-0 z-[5] bg-[#f3f4f6] pt-3">
             <div className="grid grid-cols-7 gap-1.5 pb-1.5">
               {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d) => (
                 <div key={d} className="text-[11px] uppercase tracking-wider text-enbridge-black/55 font-semibold px-1.5 py-0.5">{d}</div>
               ))}
             </div>
           </div>
-          <div>
+          <div className="schedule-months">
             {monthRange.map(([y, m]) => {
-              const monthPackages = packages.filter((p) => p.planned_ship_date && p.planned_ship_date.slice(0, 7) === keyYM(y, m)).length;
+              const ym = keyYM(y, m);
+              const monthPackages = packages.filter((p) => p.planned_ship_date && p.planned_ship_date.slice(0, 7) === ym).length;
               const first = new Date(y, m, 1);
               const start = new Date(first);
               start.setDate(1 - first.getDay());
               const last = new Date(y, m + 1, 0);
               const cells = Math.ceil((first.getDay() + last.getDate()) / 7) * 7;
+              const nrows = cells / 7;
               const days: Date[] = [];
               for (let i = 0; i < cells; i++) {
                 const d = new Date(start);
                 d.setDate(start.getDate() + i);
                 days.push(d);
               }
+              const isSkip = printRange && (ym < printRange.from || ym > printRange.to);
+              const isLast = printRange && ym === printRange.to;
               return (
-                <div key={keyYM(y, m)} className="month-block mb-3" id={`mb-${keyYM(y, m)}`} data-ym={keyYM(y, m)}>
-                  <div className="sticky top-[38px] z-[4] bg-gradient-to-b from-[#f3f4f6] to-[#f3f4f6]/0 py-2 flex items-baseline gap-2.5">
-                    <span className="text-base font-bold">{MONTHS[m]}</span>
-                    <span className="text-xs text-enbridge-black/55 font-semibold">{y}</span>
+                <div
+                  key={ym}
+                  className={`month-block mb-3 ${isSkip ? 'print-skip' : ''} ${isLast ? 'print-last' : ''}`}
+                  id={`mb-${ym}`}
+                  data-ym={ym}
+                >
+                  <div className="schedule-month-head sticky top-[38px] z-[4] bg-gradient-to-b from-[#f3f4f6] to-[#f3f4f6]/0 py-2 flex items-baseline gap-2.5">
+                    <span className="mname text-base font-bold">{MONTHS[m]}</span>
+                    <span className="myear text-xs text-enbridge-black/55 font-semibold">{y}</span>
                     <span className="text-[11px] text-enbridge-black/55 ml-auto">{monthPackages ? `${monthPackages} shipping` : ''}</span>
                   </div>
-                  <div className="grid grid-cols-7 gap-1.5 auto-rows-[minmax(116px,auto)]">
+                  <div className="schedule-print-weekdays hidden">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                      <div key={d}>{d}</div>
+                    ))}
+                  </div>
+                  <div
+                    className="schedule-grid grid grid-cols-7 gap-1.5 auto-rows-[minmax(116px,auto)]"
+                    style={{ '--rows': String(nrows), '--rowh': nrows >= 6 ? '1.05in' : '1.28in' } as React.CSSProperties}
+                  >
                     {days.map((d, i) => {
                       const iso = d.toISOString().slice(0, 10);
                       const outOfMonth = d.getMonth() !== m;
@@ -618,7 +670,7 @@ export function ScheduleView({
           </div>
         </div>
 
-        <div className="bg-white border-t border-black/10 px-5 py-2 text-[11px] text-enbridge-black/70 flex items-center justify-between gap-4 flex-wrap">
+        <div className="schedule-footer bg-white border-t border-black/10 px-5 py-2 text-[11px] text-enbridge-black/70 flex items-center justify-between gap-4 flex-wrap">
           <span>
             <strong>{scheduledCount}</strong> scheduled ·{' '}
             <strong>{unscheduledCount}</strong> unscheduled ·{' '}
@@ -633,7 +685,7 @@ export function ScheduleView({
       </div>
 
       {toast && (
-        <div className="fixed left-1/2 bottom-6 -translate-x-1/2 bg-[#2b2f33] text-white px-4 py-3 rounded-lg max-w-md shadow-xl text-xs flex gap-3 z-50 border-l-4 border-[#D04E00] whitespace-pre-line">
+        <div className="schedule-toast fixed left-1/2 bottom-6 -translate-x-1/2 bg-[#2b2f33] text-white px-4 py-3 rounded-lg max-w-md shadow-xl text-xs flex gap-3 z-50 border-l-4 border-[#D04E00] whitespace-pre-line">
           <span className="text-[#D04E00] text-base leading-none">⚠</span>
           <span>{toast}</span>
         </div>
@@ -648,6 +700,91 @@ export function ScheduleView({
           onDelete={walkdownModal.mode === 'edit' && walkdownModal.id ? () => deleteWalkdown(walkdownModal.id!) : undefined}
         />
       )}
+
+      {printModal && (
+        <PrintModal
+          monthRange={monthRange}
+          state={printModal}
+          onChange={setPrintModal}
+          onCancel={() => setPrintModal(null)}
+          onPrint={doPrint}
+        />
+      )}
+    </div>
+  );
+}
+
+function PrintModal({
+  monthRange, state, onChange, onCancel, onPrint,
+}: {
+  monthRange: [number, number][];
+  state: { from: string; to: string };
+  onChange: (next: { from: string; to: string }) => void;
+  onCancel: () => void;
+  onPrint: () => void;
+}) {
+  const yms = monthRange.map(([y, m]) => keyYM(y, m));
+  const label = (k: string) => `${MONTHS[+k.slice(5, 7) - 1]} ${k.slice(0, 4)}`;
+  const fi = yms.indexOf(state.from);
+  const ti = yms.indexOf(state.to);
+  const [lo, hi] = fi >= 0 && ti >= 0 ? (fi <= ti ? [fi, ti] : [ti, fi]) : [-1, -1];
+  const pageCount = lo >= 0 ? hi - lo + 1 : 0;
+
+  return (
+    <div
+      className="schedule-print-modal fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-black/10">
+          <h3 className="text-sm font-semibold">Print calendar</h3>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-xs text-enbridge-black/60 leading-snug">
+            Choose the month range to print. Each month prints on its own 8.5×11 landscape page.
+          </p>
+          <div className="grid grid-cols-[auto,1fr] gap-2 items-center">
+            <label className="text-xs font-medium text-enbridge-black/70">From</label>
+            <select
+              value={state.from}
+              onChange={(e) => onChange({ ...state, from: e.target.value })}
+              className="rounded border border-black/20 px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-enbridge-black"
+            >
+              {yms.map((k) => (
+                <option key={k} value={k}>{label(k)}</option>
+              ))}
+            </select>
+            <label className="text-xs font-medium text-enbridge-black/70">To</label>
+            <select
+              value={state.to}
+              onChange={(e) => onChange({ ...state, to: e.target.value })}
+              className="rounded border border-black/20 px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-enbridge-black"
+            >
+              {yms.map((k) => (
+                <option key={k} value={k}>{label(k)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="text-[11px] text-enbridge-black/55">
+            {pageCount > 0 ? `${pageCount} page${pageCount === 1 ? '' : 's'} will print.` : ''}
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-black/10 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs rounded border border-black/15 hover:bg-enbridge-paper"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onPrint}
+            disabled={pageCount === 0}
+            className="px-3 py-1.5 text-xs rounded bg-[#D04E00] text-white hover:bg-[#b84500] disabled:opacity-50 font-semibold"
+          >
+            Print
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -729,7 +866,7 @@ function WalkdownModal({
 }) {
   return (
     <div
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      className="schedule-walkdown-modal fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
       onClick={onCancel}
     >
       <div
@@ -928,12 +1065,12 @@ function Cell({
         if (data.startsWith('grp:')) onDropGroup(data.slice(4), dateISO);
         else onDropItem(data.replace(/^it:/, ''), dateISO);
       }}
-      className={`bg-white border rounded-lg p-1.5 flex flex-col min-h-[116px] transition-colors
+      className={`schedule-cell bg-white border rounded-lg p-1.5 flex flex-col min-h-[116px] transition-colors
         ${drag === 'invalid' ? 'bg-[#fdeceb] border-[#c0392b] border-dashed' : ''}
         ${drag === 'valid' ? 'bg-[#eef6ee] border-[#3f9142] border-dashed' : 'border-black/10'}
       `}
     >
-      <div className="text-[11px] text-enbridge-black/55 font-semibold flex justify-between px-1 pt-0.5 pb-1">
+      <div className="daynum text-[11px] text-enbridge-black/55 font-semibold flex justify-between px-1 pt-0.5 pb-1">
         <span>{dayNum}</span>
         {badgeCount > 0 && <span className="text-[10px]">{badgeCount}</span>}
       </div>
@@ -951,7 +1088,7 @@ function Cell({
         {showWalkdowns && (
           <button
             onClick={() => onCreateWalkdown(dateISO)}
-            className="mt-0.5 text-[10px] text-enbridge-black/40 hover:text-[#3f9142] hover:bg-green-50 rounded py-0.5 border border-dashed border-transparent hover:border-green-300 transition-colors"
+            className="schedule-add-walkdown mt-0.5 text-[10px] text-enbridge-black/40 hover:text-[#3f9142] hover:bg-green-50 rounded py-0.5 border border-dashed border-transparent hover:border-green-300 transition-colors"
             title="Add a walk-down milestone on this day"
           >
             + Walk-down

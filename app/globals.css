@@ -10,3 +10,145 @@
     @apply min-h-screen antialiased;
   }
 }
+
+/* ============================================================
+   Print — one month per 8.5×11 landscape page
+   Triggered by the Print… button on /schedule
+   ============================================================ */
+
+@media print {
+  @page {
+    size: letter landscape;
+    margin: 0.35in;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Hide app chrome */
+  header,
+  .schedule-side,
+  .schedule-toggle-rail,
+  .schedule-toolbar,
+  .schedule-weekdays,
+  .schedule-footer,
+  .schedule-toast,
+  .schedule-walkdown-modal,
+  .schedule-print-modal,
+  .schedule-add-walkdown {
+    display: none !important;
+  }
+
+  /* Force document flow through the layout so pages break naturally */
+  main {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .schedule-root {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .schedule-cal-wrap {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .schedule-months {
+    display: block !important;
+  }
+
+  /* One month per page */
+  .month-block {
+    margin: 0 !important;
+    padding: 0 !important;
+    break-after: page !important;
+    page-break-after: always !important;
+    break-inside: avoid !important;
+  }
+  .month-block.print-skip {
+    display: none !important;
+  }
+  .month-block.print-last {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+
+  /* Month heading — un-sticky and give it a coloured underline for print */
+  .schedule-month-head {
+    position: static !important;
+    background: none !important;
+    padding: 0 0 6px !important;
+    border-bottom: 2px solid #d04e00 !important;
+    margin-bottom: 6px !important;
+    display: flex !important;
+  }
+  .schedule-month-head .mname {
+    font-size: 18px !important;
+  }
+  .schedule-month-head .myear {
+    font-size: 13px !important;
+  }
+
+  /* Weekday header repeated per month via .schedule-print-weekdays block */
+  .schedule-print-weekdays {
+    display: grid !important;
+    grid-template-columns: repeat(7, 1fr) !important;
+    gap: 4px !important;
+    margin-bottom: 4px !important;
+  }
+  .schedule-print-weekdays div {
+    font-size: 9px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    color: #555 !important;
+    font-weight: 700 !important;
+    padding: 1px 4px !important;
+  }
+
+  /* Grid — row heights come from CSS vars set inline per month */
+  .schedule-grid {
+    height: auto !important;
+    grid-template-rows: repeat(var(--rows, 6), var(--rowh, 1.05in)) !important;
+    gap: 3px !important;
+  }
+
+  .schedule-cell {
+    min-height: 0 !important;
+    max-height: var(--rowh, 1.05in) !important;
+    overflow: hidden !important;
+    border: 1px solid #bbb !important;
+    border-radius: 4px !important;
+    padding: 2px 3px 3px !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .schedule-cell .daynum {
+    font-size: 9px !important;
+    margin: 0 2px 1px !important;
+    flex: 0 0 auto !important;
+  }
+
+  /* Chips — shrunk to fit */
+  .chip {
+    padding: 1.5px 4px 1.5px 6px !important;
+    font-size: 7.5px !important;
+    line-height: 1.15 !important;
+    break-inside: avoid !important;
+  }
+  .chip.group .members {
+    display: none !important;
+  }
+
+  /* Preserve every colour on print — no monochrome conversion */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
