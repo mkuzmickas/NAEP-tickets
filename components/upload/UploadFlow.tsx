@@ -138,6 +138,24 @@ export function UploadFlow() {
     if (!skipRefresh) router.refresh();
   }
 
+  async function bulkCommitAll() {
+    setBulkCommitting(true);
+    const eligible = items.filter(isCommittable);
+    await Promise.allSettled(
+      eligible.map(async (item) => {
+        if (!item.result) return;
+        try {
+          await commitItem(item.localId, item.result, false, true);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          patchItem(item.localId, { status: 'error', errorMsg: msg });
+        }
+      })
+    );
+    setBulkCommitting(false);
+    router.refresh();
+  }
+
   async function rejectItem(localId: string, storagePath?: string) {
     if (storagePath) {
       const supabase = createClient();
