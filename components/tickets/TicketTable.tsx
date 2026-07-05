@@ -34,6 +34,77 @@ async function viewPdf(path: string) {
   window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
 }
 
+function csvEscape(v: string | number): string {
+  const s = String(v);
+  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function buildCsv(rows: TicketRow[]): string {
+  const headers = [
+    'Date', 'Ticket #', 'Vendor', 'Scope', 'PO Number',
+    'Labour', 'Equipment', 'Materials', 'LOA/Other', 'Total',
+    'Master Ticket', 'Status',
+  ];
+  const lines = [headers.map(csvEscape).join(',')];
+
+  let sumL = 0, sumE = 0, sumM = 0, sumO = 0, sumT = 0;
+
+  for (const r of rows) {
+    const c = categoryTotals(r.line_items);
+    sumL += c.labour;
+    sumE += c.equipment;
+    sumM += c.materials;
+    sumO += c.loa_other;
+    sumT += r.face_value;
+    lines.push([
+      r.ticket_date,
+      r.ticket_number,
+      r.vendor_display_name,
+      r.scope ?? '',
+      r.po_number,
+      c.labour.toFixed(2),
+      c.equipment.toFixed(2),
+      c.materials.toFixed(2),
+      c.loa_other.toFixed(2),
+      r.face_value.toFixed(2),
+      r.is_master ? 'YES' : '',
+      r.status,
+    ].map(csvEscape).join(','));
+  }
+
+  lines.push([
+    '', '', '', '', 'TOTALS',
+    sumL.toFixed(2),
+    sumE.toFixed(2),
+    sumM.toFixed(2),
+    sumO.toFixed(2),
+    sumT.toFixed(2),
+    '', '',
+  ].map(csvEscape).join(','));
+
+  return lines.join('\r\n');
+}
+
+function downloadCsv(filename: string, content: string) {
+  // Prepend BOM so Excel opens as UTF-8 (preserves em-dashes etc.)
+  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function safeFilenamePart(s: string): string {
+  return s.replace(/[^a-z0-9-_]+/gi, '_').replace(/^_+|_+$/g, '');
+}
+
 export function TicketTable({
   initialTickets,
   initialPoFilter = 'all',
@@ -133,8 +204,34 @@ export function TicketTable({
 
   const filtersActive = !!(search || poFilter !== 'all' || dateFrom || dateTo);
 
+  const activeVendor = poFilter !== 'all' && filtered.length > 0 ? filtered[0] : null;
+
+  function handleExport() {
+    if (filtered.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const scope = activeVendor
+      ? `${safeFilenamePart(activeVendor.vendor_display_name)}_${safeFilenamePart(activeVendor.po_number)}`
+      : 'all-tickets';
+    const filename = `NAEP_tickets_${scope}_${today}.csv`;
+    downloadCsv(filename, buildCsv(filtered));
+  }
+
   return (
     <div className="space-y-4">
+      {activeVendor && (
+        <div className="bg-enbridge-black text-white rounded-lg px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-white/60 font-semibold">Viewing tickets for</div>
+            <div className="text-xl font-semibold tracking-tight mt-0.5">{activeVendor.vendor_display_name}</div>
+            <div className="text-sm text-white/80 mt-0.5 line-clamp-1">{activeVendor.scope ?? '—'}</div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-[10px] uppercase tracking-widest text-white/60 font-semibold">PO Number</div>
+            <div className="text-sm font-mono mt-0.5">{activeVendor.po_number}</div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-white rounded-lg border border-black/10 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="lg:col-span-2">
@@ -194,13 +291,25 @@ export function TicketTable({
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-black/10 overflow-hidden">
-        <div className="px-5 py-3 border-b border-black/10 flex items-center justify-between text-sm">
+        <div className="px-5 py-3 border-b border-black/10 flex items-center justify-between text-sm gap-3 flex-wrap">
           <span className="text-enbridge-black/70">
             Showing <strong>{filtered.length}</strong> of {initialTickets.length} tickets
           </span>
-          <span className="text-enbridge-black/70 tabular-nums">
-            Sum: <strong>{formatMoney(sumFiltered)}</strong>
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-enbridge-black/70 tabular-nums">
+              Sum: <strong>{formatMoney(sumFiltered)}</strong>
+            </span>
+            <button
+              onClick={handleExport}
+              disabled={filtered.length === 0}
+              title="Download the filtered rows plus a totals line as an Excel-compatible CSV"
+              className="text-xs px-3 py-1.5 border border-black/20 rounded bg-white hover:bg-enbridge-paper disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
+            >
+              <span>📊</span>
+              <span>Export to Excel</span>
+              <span className="text-enbridge-black/50">({filtered.length})</span>
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
