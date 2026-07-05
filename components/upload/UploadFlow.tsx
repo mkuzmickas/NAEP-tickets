@@ -114,7 +114,8 @@ export function UploadFlow() {
   async function commitItem(
     localId: string,
     finalResult: ParseResult,
-    replace = false
+    replace = false,
+    skipRefresh = false
   ) {
     const res = await fetch('/api/tickets', {
       method: 'POST',
@@ -134,7 +135,7 @@ export function UploadFlow() {
       result: finalResult,
       replaced: replace,
     });
-    router.refresh();
+    if (!skipRefresh) router.refresh();
   }
 
   async function rejectItem(localId: string, storagePath?: string) {
