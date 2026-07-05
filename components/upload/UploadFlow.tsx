@@ -23,9 +23,20 @@ function uid() {
   return Math.random().toString(36).slice(2, 11);
 }
 
+function isCommittable(item: Item): boolean {
+  if (item.status !== 'ready' || !item.result) return false;
+  const r = item.result;
+  if (!r.reconciled) return false;
+  if (!r.po_exists) return false;
+  if (r.duplicates.ticket_number_collides_with) return false;
+  if (r.duplicates.bol_collisions.length > 0) return false;
+  return true;
+}
+
 export function UploadFlow() {
   const [items, setItems] = useState<Item[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [bulkCommitting, setBulkCommitting] = useState(false);
   const router = useRouter();
 
   // Suppress the browser default of opening a dropped PDF in a new tab
@@ -173,6 +184,35 @@ export function UploadFlow() {
 
       {items.length > 0 && (
         <div className="space-y-4">
+          {(() => {
+            const readyCount = items.filter(isCommittable).length;
+            const parsingCount = items.filter((i) => i.status === 'uploading' || i.status === 'parsing').length;
+            const errorCount = items.filter((i) => i.status === 'error').length;
+            const committedCount = items.filter((i) => i.status === 'committed').length;
+            const needsReviewCount = items.filter(
+              (i) => i.status === 'ready' && !isCommittable(i)
+            ).length;
+            if (items.length < 2) return null;
+            return (
+              <div className="rounded-lg border border-black/10 bg-white p-4 flex items-center justify-between gap-4 flex-wrap">
+                <div className="text-sm text-enbridge-black/70 tabular-nums">
+                  <strong>{readyCount}</strong> ready · {needsReviewCount} need review · {parsingCount} still parsing · {committedCount} committed · {errorCount} error{errorCount === 1 ? '' : 's'}
+                </div>
+                <button
+                  onClick={bulkCommitAll}
+                  disabled={readyCount === 0 || bulkCommitting}
+                  className="px-4 py-2 rounded bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Commit every card that has a green ✓ Reconciled badge and no duplicate warnings"
+                >
+                  {bulkCommitting
+                    ? `Committing ${readyCount}…`
+                    : readyCount === 0
+                      ? 'Nothing to bulk-commit'
+                      : `Accept & commit all ready (${readyCount})`}
+                </button>
+              </div>
+            );
+          })()}
           {items.map((item) => (
             <ItemCard
               key={item.localId}
