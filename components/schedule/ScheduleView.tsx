@@ -1,7 +1,33 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SchedulePackage, ScheduleWalkdown } from '@/types/schedule';
+
+type SearchCtx = { term: string; currentMatchId: string | null };
+const SearchContext = createContext<SearchCtx>({ term: '', currentMatchId: null });
+
+function Highlight({ text }: { text: string }) {
+  const { term } = useContext(SearchContext);
+  if (!term || !text) return <>{text}</>;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  const lower = term.toLowerCase();
+  return (
+    <>
+      {parts.map((part, i) =>
+        part && part.toLowerCase() === lower ? (
+          <mark key={i} className="bg-purple-300 text-purple-950 rounded-sm px-0.5">{part}</mark>
+        ) : (
+          <Fragment key={i}>{part}</Fragment>
+        )
+      )}
+    </>
+  );
+}
+
+function isCurrentMatch(id: string, current: string | null): boolean {
+  return current === id;
+}
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -78,6 +104,60 @@ export function ScheduleView({
   const [walkdownModal, setWalkdownModal] = useState<WalkdownModalState | null>(null);
   const [printModal, setPrintModal] = useState<{ from: string; to: string } | null>(null);
   const [printRange, setPrintRange] = useState<{ from: string; to: string } | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  type SearchMatch = { kind: 'pkg' | 'group' | 'wd'; matchId: string; date: string | null };
+  const searchMatches = useMemo<SearchMatch[]>(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return [];
+    const out: SearchMatch[] = [];
+    const seenGroups = new Set<string>();
+    packages.forEach((p) => {
+      const hit = p.tag.toLowerCase().includes(term) || p.ewp.toLowerCase().includes(term);
+      if (!hit) return;
+      if (p.convoy_group) {
+        if (!seenGroups.has(p.convoy_group)) {
+          seenGroups.add(p.convoy_group);
+          out.push({ kind: 'group', matchId: `group-${p.convoy_group}`, date: p.planned_ship_date });
+        }
+      } else {
+        out.push({ kind: 'pkg', matchId: `pkg-${p.id}`, date: p.planned_ship_date });
+      }
+    });
+    walkdowns.forEach((w) => {
+      if (w.name.toLowerCase().includes(term)) {
+        out.push({ kind: 'wd', matchId: `wd-${w.id}`, date: w.event_date });
+      }
+    });
+    out.sort((a, b) => (a.date ?? 'zzzz').localeCompare(b.date ?? 'zzzz') || a.matchId.localeCompare(b.matchId));
+    return out;
+  }, [packages, walkdowns, searchTerm]);
+
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [searchTerm]);
+
+  const currentMatch = searchMatches[currentMatchIndex] ?? null;
+  const currentMatchId = currentMatch?.matchId ?? null;
+
+  useEffect(() => {
+    if (!currentMatch) return;
+    if (!currentMatch.date) return;
+    const el = document.querySelector(`[data-search-id="${currentMatch.matchId}"]`);
+    if (el instanceof HTMLElement) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentMatch]);
+
+  function nextMatch() {
+    if (searchMatches.length === 0) return;
+    setCurrentMatchIndex((i) => (i + 1) % searchMatches.length);
+  }
+  function prevMatch() {
+    if (searchMatches.length === 0) return;
+    setCurrentMatchIndex((i) => (i - 1 + searchMatches.length) % searchMatches.length);
+  }
 
   useEffect(() => {
     const handler = () => setPrintRange(null);
@@ -392,6 +472,7 @@ export function ScheduleView({
   }
 
   return (
+    <SearchContext.Provider value={{ term: searchTerm, currentMatchId }}>
     <div className="schedule-root flex h-full w-full text-[13px] leading-snug">
       {!panelOpen && (
         <button
@@ -505,7 +586,7 @@ export function ScheduleView({
                       <tr key={p.id} className="border-b border-black/5 hover:bg-black/[0.02]">
                         <td className={`px-2 py-1.5 align-top font-bold ${p.is_rack ? 'text-[#1F4E79]' : 'text-[#9c4f12]'}`}>
                           <span className={`inline-block w-2 h-2 rounded-[2px] mr-1.5 align-middle ${p.is_rack ? 'bg-[#1F4E79]' : 'bg-[#C2691C]'}`} />
-                          {p.tag}
+                          <Highlight text={p.tag} />
                           {p.is_over_height && <span className="ml-1 bg-black text-[#f5ff00] text-[9px] font-bold px-1 rounded">OH</span>}
                           {p.convoy_group && <span className="ml-1 text-enbridge-black/55">⊕</span>}
                         </td>
@@ -570,6 +651,50 @@ export function ScheduleView({
               ))}
             </select>
             <button onClick={goToday} className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]">Today</button>
+            <div className="flex items-center gap-1 border border-black/15 rounded bg-white px-1.5 py-0.5">
+              <span className="text-enbridge-black/40 text-xs">🔎</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search…"
+                className="text-xs bg-transparent border-none focus:outline-none w-28 py-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.shiftKey ? prevMatch() : nextMatch();
+                  else if (e.key === 'Escape') setSearchTerm('');
+                }}
+              />
+              {searchTerm && (
+                <>
+                  <span className="text-[10px] text-enbridge-black/55 tabular-nums whitespace-nowrap">
+                    {searchMatches.length > 0 ? `${currentMatchIndex + 1}/${searchMatches.length}` : '0'}
+                  </span>
+                  <button
+                    onClick={prevMatch}
+                    disabled={searchMatches.length === 0}
+                    title="Previous match (Shift+Enter)"
+                    className="text-[10px] px-1 text-enbridge-black/60 hover:text-enbridge-black disabled:opacity-30"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    onClick={nextMatch}
+                    disabled={searchMatches.length === 0}
+                    title="Next match (Enter)"
+                    className="text-[10px] px-1 text-enbridge-black/60 hover:text-enbridge-black disabled:opacity-30"
+                  >
+                    ▼
+                  </button>
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    title="Clear search (Escape)"
+                    className="text-[10px] px-1 text-enbridge-black/60 hover:text-enbridge-black"
+                  >
+                    ×
+                  </button>
+                </>
+              )}
+            </div>
             <button
               onClick={openPrintModal}
               title="Print calendar to PDF (one month per landscape page)"
@@ -711,6 +836,7 @@ export function ScheduleView({
         />
       )}
     </div>
+    </SearchContext.Provider>
   );
 }
 
@@ -842,15 +968,19 @@ function EditableDate({
 }
 
 function WalkdownChip({ wd, onClick }: { wd: ScheduleWalkdown; onClick: () => void }) {
+  const { currentMatchId } = useContext(SearchContext);
+  const searchId = `wd-${wd.id}`;
+  const isCurrent = isCurrentMatch(searchId, currentMatchId);
   const s = WD_STYLES[wd.level];
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className={`w-full text-left rounded border ${s.bg} ${s.text} ${s.border} px-1.5 py-0.5 text-[10px] font-semibold flex items-center gap-1 hover:brightness-95`}
+      data-search-id={searchId}
+      className={`w-full text-left rounded border ${s.bg} ${s.text} ${s.border} px-1.5 py-0.5 text-[10px] font-semibold flex items-center gap-1 hover:brightness-95 ${isCurrent ? 'ring-2 ring-purple-500 ring-offset-1' : ''}`}
       title={`${wd.level}% walk-down · click to edit`}
     >
       <span className={`inline-block w-1.5 h-1.5 rounded-full ${s.solid}`} />
-      <span className="truncate">{wd.level}% · {wd.name}</span>
+      <span className="truncate">{wd.level}% · <Highlight text={wd.name} /></span>
     </button>
   );
 }
@@ -955,22 +1085,27 @@ function Chip({
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }) {
+  const { currentMatchId } = useContext(SearchContext);
+  const searchId = `pkg-${pkg.id}`;
+  const isCurrent = isCurrentMatch(searchId, currentMatchId);
   const cls = pkg.is_rack ? 'bg-[#E8EFF6] border-[#c2d4e6]' : 'bg-[#FBEEE0] border-[#ecd2b3]';
   const barCls = pkg.is_rack ? 'bg-[#1F4E79]' : 'bg-[#C2691C]';
   const tagCls = pkg.is_rack ? 'text-[#1F4E79]' : 'text-[#9c4f12]';
   const overCls = pkg.is_over_height ? '!bg-[#f5ff00] !border-[#c9d400]' : '';
+  const ringCls = isCurrent ? 'ring-2 ring-purple-500 ring-offset-1' : '';
   const dims = pkg.length_ft != null ? `${pkg.length_ft}×${pkg.width_ft}×${pkg.height_ft} ft` : '—';
   const wt = pkg.weight_lbs ? fmtWeight(pkg.weight_lbs) : '';
   return (
     <div
       draggable
+      data-search-id={searchId}
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', `it:${pkg.id}`); onDragStart(pkg.id); }}
       onDragEnd={onDragEnd}
-      className={`chip relative rounded-md border cursor-grab active:cursor-grabbing px-2 py-1 pl-2.5 text-[11px] select-none ${cls} ${overCls}`}
+      className={`chip relative rounded-md border cursor-grab active:cursor-grabbing px-2 py-1 pl-2.5 text-[11px] select-none ${cls} ${overCls} ${ringCls}`}
     >
       <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md ${pkg.is_over_height ? 'bg-black' : barCls}`} />
       <div className={`font-bold ${pkg.is_over_height ? 'text-black' : tagCls}`}>
-        {pkg.tag}
+        <Highlight text={pkg.tag} />
         {pkg.is_over_height && (
           <span className="ml-1.5 bg-black text-[#f5ff00] text-[9px] font-bold px-1 rounded align-middle">
             OVER-HT {pkg.height_ft}′
@@ -978,7 +1113,7 @@ function Chip({
         )}
       </div>
       <div className={`text-[10px] mt-0.5 ${pkg.is_over_height ? 'text-[#3d4400]' : 'text-enbridge-black/55'}`}>
-        {inTray ? `${pkg.ewp} · ` : ''}{dims}{wt ? ` · ${wt}` : ''}
+        {inTray ? <><Highlight text={pkg.ewp} /> · </> : ''}{dims}{wt ? ` · ${wt}` : ''}
       </div>
     </div>
   );
@@ -993,31 +1128,36 @@ function GroupChip({
   onDragStart: (g: string) => void;
   onDragEnd: () => void;
 }) {
+  const { currentMatchId } = useContext(SearchContext);
+  const searchId = `group-${group}`;
+  const isCurrent = isCurrentMatch(searchId, currentMatchId);
   const anyRack = members.some((m) => m.is_rack);
   const anyOver = members.some((m) => m.is_over_height);
   const cls = anyRack ? 'bg-[#E8EFF6] border-[#c2d4e6]' : 'bg-[#FBEEE0] border-[#ecd2b3]';
   const overCls = anyOver ? '!bg-[#f5ff00] !border-[#c9d400]' : '';
+  const ringCls = isCurrent ? 'ring-2 ring-purple-500 ring-offset-1' : '';
   const gname = GROUP_LABELS[group] ?? group;
   return (
     <div
       draggable
+      data-search-id={searchId}
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', `grp:${group}`); onDragStart(group); }}
       onDragEnd={onDragEnd}
-      className={`chip relative rounded-md border cursor-grab active:cursor-grabbing px-2 py-1 pl-2.5 text-[11px] select-none ${cls} ${overCls}`}
+      className={`chip relative rounded-md border cursor-grab active:cursor-grabbing px-2 py-1 pl-2.5 text-[11px] select-none ${cls} ${overCls} ${ringCls}`}
     >
       <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md ${anyOver ? 'bg-black' : (anyRack ? 'bg-[#1F4E79]' : 'bg-[#C2691C]')}`} />
       <div className="flex items-center justify-between gap-1.5">
         <span className={`font-bold ${anyOver ? 'text-black' : (anyRack ? 'text-[#1F4E79]' : 'text-[#9c4f12]')}`}>
-          {gname}
+          <Highlight text={gname} />
           {anyOver && <span className="ml-1.5 bg-black text-[#f5ff00] text-[9px] font-bold px-1 rounded">OVER-HT {members[0].height_ft}′</span>}
         </span>
         <span className="text-[9px] text-enbridge-black/55 font-semibold bg-black/5 rounded-full px-1.5 py-0.5">{members.length} loads · 1 convoy</span>
       </div>
-      <div className="text-[10px] text-enbridge-black/55 mt-0.5">{inTray ? `${members[0].ewp} · ` : ''}Ships together same day</div>
+      <div className="text-[10px] text-enbridge-black/55 mt-0.5">{inTray ? <><Highlight text={members[0].ewp} /> · </> : ''}Ships together same day</div>
       <div className="mt-1 flex flex-col gap-0.5">
         {members.map((m) => (
           <div key={m.id} className="text-[10px] px-1.5 py-0.5 bg-white/60 rounded border border-black/5 flex justify-between gap-1.5">
-            <span>{m.tag.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()}</span>
+            <span><Highlight text={m.tag.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()} /></span>
             <span className="text-enbridge-black/55 tabular-nums">{m.height_ft}′ · {fmtWeight(m.weight_lbs)}</span>
           </div>
         ))}
