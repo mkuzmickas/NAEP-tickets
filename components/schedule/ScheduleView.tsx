@@ -106,6 +106,7 @@ export function ScheduleView({
   const [printRange, setPrintRange] = useState<{ from: string; to: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   type SearchMatch = { kind: 'pkg' | 'group' | 'wd'; matchId: string; date: string | null };
   const searchMatches = useMemo<SearchMatch[]>(() => {
@@ -157,6 +158,74 @@ export function ScheduleView({
   function prevMatch() {
     if (searchMatches.length === 0) return;
     setCurrentMatchIndex((i) => (i - 1 + searchMatches.length) % searchMatches.length);
+  }
+
+  const existingEwps = useMemo(
+    () => Array.from(new Set(packages.map((p) => p.ewp))).sort(),
+    [packages]
+  );
+  const existingGroups = useMemo(
+    () => Array.from(new Set(packages.map((p) => p.convoy_group).filter((g): g is string => !!g))).sort(),
+    [packages]
+  );
+
+  async function addPackage(payload: {
+    ewp: string;
+    tag: string;
+    length_ft: string;
+    width_ft: string;
+    height_ft: string;
+    weight_lbs: string;
+    rts_date: string;
+    planned_ship_date: string;
+    convoy_group: string;
+  }): Promise<string | null> {
+    try {
+      const res = await fetch('/api/schedule/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ewp: payload.ewp,
+          tag: payload.tag,
+          length_ft: payload.length_ft ? Number(payload.length_ft) : null,
+          width_ft: payload.width_ft ? Number(payload.width_ft) : null,
+          height_ft: payload.height_ft ? Number(payload.height_ft) : null,
+          weight_lbs: payload.weight_lbs || null,
+          rts_date: payload.rts_date || null,
+          planned_ship_date: payload.planned_ship_date || null,
+          convoy_group: payload.convoy_group || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return body.error ?? `Add failed (${res.status})`;
+      }
+      const { pkg } = await res.json();
+      setPackages((prev) => [...prev, {
+        id: pkg.id,
+        ewp: pkg.ewp,
+        tag: pkg.tag,
+        length_ft: pkg.length_ft == null ? null : Number(pkg.length_ft),
+        width_ft: pkg.width_ft == null ? null : Number(pkg.width_ft),
+        height_ft: pkg.height_ft == null ? null : Number(pkg.height_ft),
+        weight_lbs: pkg.weight_lbs,
+        shipping_cost: null,
+        permits_cost: null,
+        total_cost: null,
+        actuals: null,
+        rts_date: pkg.rts_date,
+        planned_ship_date: pkg.planned_ship_date,
+        is_rack: pkg.is_rack,
+        is_over_height: pkg.is_over_height,
+        convoy_group: pkg.convoy_group,
+        sort_order: pkg.sort_order,
+      }]);
+      setAddModalOpen(false);
+      return null;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return msg;
+    }
   }
 
   useEffect(() => {
@@ -696,6 +765,13 @@ export function ScheduleView({
               )}
             </div>
             <button
+              onClick={() => setAddModalOpen(true)}
+              title="Add a new package to the schedule"
+              className="text-xs px-3 py-1.5 border border-[#D04E00] rounded bg-white text-[#D04E00] hover:bg-[#D04E00] hover:text-white font-semibold"
+            >
+              + Add package
+            </button>
+            <button
               onClick={openPrintModal}
               title="Print calendar to PDF (one month per landscape page)"
               className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]"
@@ -835,8 +911,203 @@ export function ScheduleView({
           onPrint={doPrint}
         />
       )}
+
+      {addModalOpen && (
+        <AddPackageModal
+          existingEwps={existingEwps}
+          existingGroups={existingGroups}
+          onCancel={() => setAddModalOpen(false)}
+          onSave={addPackage}
+        />
+      )}
     </div>
     </SearchContext.Provider>
+  );
+}
+
+function AddPackageModal({
+  existingEwps, existingGroups, onCancel, onSave,
+}: {
+  existingEwps: string[];
+  existingGroups: string[];
+  onCancel: () => void;
+  onSave: (payload: {
+    ewp: string; tag: string;
+    length_ft: string; width_ft: string; height_ft: string;
+    weight_lbs: string;
+    rts_date: string; planned_ship_date: string;
+    convoy_group: string;
+  }) => Promise<string | null>;
+}) {
+  const [form, setForm] = useState({
+    ewp: '',
+    ewpMode: 'existing' as 'existing' | 'new',
+    tag: '',
+    length_ft: '',
+    width_ft: '',
+    height_ft: '',
+    weight_lbs: '',
+    rts_date: '',
+    planned_ship_date: '',
+    convoy_group: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSave() {
+    if (!form.ewp.trim()) {
+      setError('EWP is required.');
+      return;
+    }
+    if (!form.tag.trim()) {
+      setError('Tag / description is required.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    const err = await onSave({
+      ewp: form.ewp.trim(),
+      tag: form.tag.trim(),
+      length_ft: form.length_ft,
+      width_ft: form.width_ft,
+      height_ft: form.height_ft,
+      weight_lbs: form.weight_lbs.trim(),
+      rts_date: form.rts_date,
+      planned_ship_date: form.planned_ship_date,
+      convoy_group: form.convoy_group.trim(),
+    });
+    setSaving(false);
+    if (err) setError(err);
+  }
+
+  const inputCls = 'w-full rounded border border-black/20 px-2 py-1.5 text-sm focus:outline-none focus:border-enbridge-black';
+  const labelCls = 'block text-[10px] font-semibold text-enbridge-black/70 uppercase tracking-wide mb-1';
+
+  return (
+    <div
+      className="schedule-print-modal fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-black/10">
+          <h3 className="text-sm font-semibold">Add package</h3>
+          <div className="text-[11px] text-enbridge-black/55 mt-0.5">
+            Leave Planned Ship blank to add it to the Unscheduled tray.
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className={labelCls}>EWP</label>
+            <div className="flex gap-2">
+              {form.ewpMode === 'existing' ? (
+                <select
+                  value={form.ewp}
+                  onChange={(e) => setForm({ ...form, ewp: e.target.value })}
+                  className={`${inputCls} bg-white`}
+                >
+                  <option value="">Choose an EWP…</option>
+                  {existingEwps.map((e) => <option key={e} value={e}>{e}</option>)}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={form.ewp}
+                  onChange={(e) => setForm({ ...form, ewp: e.target.value })}
+                  placeholder="New EWP name (e.g. Facility Piping (EWP 30))"
+                  className={inputCls}
+                  autoFocus
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, ewpMode: form.ewpMode === 'existing' ? 'new' : 'existing', ewp: '' })}
+                className="shrink-0 text-xs px-2 py-1 border border-black/15 rounded hover:bg-enbridge-paper whitespace-nowrap"
+              >
+                {form.ewpMode === 'existing' ? '+ New EWP' : '← Existing'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Tag / description</label>
+            <input
+              type="text"
+              value={form.tag}
+              onChange={(e) => setForm({ ...form, tag: e.target.value })}
+              placeholder="e.g. MOD-11116"
+              className={inputCls}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={labelCls}>Length (ft)</label>
+              <input type="number" step="0.1" value={form.length_ft} onChange={(e) => setForm({ ...form, length_ft: e.target.value })} className={`${inputCls} tabular-nums`} />
+            </div>
+            <div>
+              <label className={labelCls}>Width (ft)</label>
+              <input type="number" step="0.1" value={form.width_ft} onChange={(e) => setForm({ ...form, width_ft: e.target.value })} className={`${inputCls} tabular-nums`} />
+            </div>
+            <div>
+              <label className={labelCls}>Height (ft)</label>
+              <input type="number" step="0.1" value={form.height_ft} onChange={(e) => setForm({ ...form, height_ft: e.target.value })} className={`${inputCls} tabular-nums`} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Weight (lbs)</label>
+            <input
+              type="text"
+              value={form.weight_lbs}
+              onChange={(e) => setForm({ ...form, weight_lbs: e.target.value })}
+              placeholder="e.g. 76,000 or 76,000 (estimate)"
+              className={inputCls}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Ready to Ship (RTS)</label>
+              <input type="date" value={form.rts_date} onChange={(e) => setForm({ ...form, rts_date: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Planned Ship</label>
+              <input
+                type="date"
+                value={form.planned_ship_date}
+                min={form.rts_date || undefined}
+                onChange={(e) => setForm({ ...form, planned_ship_date: e.target.value })}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Convoy group (optional)</label>
+            <select
+              value={form.convoy_group}
+              onChange={(e) => setForm({ ...form, convoy_group: e.target.value })}
+              className={`${inputCls} bg-white`}
+            >
+              <option value="">— None —</option>
+              {existingGroups.map((g) => <option key={g} value={g}>{GROUP_LABELS[g] ?? g}</option>)}
+            </select>
+          </div>
+          {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
+        </div>
+        <div className="px-5 py-3 border-t border-black/10 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs rounded border border-black/15 hover:bg-enbridge-paper disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs rounded bg-[#D04E00] text-white hover:bg-[#b84500] disabled:opacity-60 font-semibold"
+          >
+            {saving ? 'Saving…' : 'Add package'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
