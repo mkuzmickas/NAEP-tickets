@@ -1247,11 +1247,11 @@ function WalkdownChip({ wd, onClick }: { wd: ScheduleWalkdown; onClick: () => vo
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       data-search-id={searchId}
-      className={`w-full text-left rounded border ${s.bg} ${s.text} ${s.border} px-1.5 py-0.5 text-[10px] font-semibold flex items-center gap-1 hover:brightness-95 ${isCurrent ? 'ring-2 ring-purple-500 ring-offset-1' : ''}`}
+      className={`w-full text-left rounded border ${s.bg} ${s.text} ${s.border} px-1.5 py-0.5 text-[10px] font-semibold flex items-start gap-1 hover:brightness-95 leading-tight ${isCurrent ? 'ring-2 ring-purple-500 ring-offset-1' : ''}`}
       title={`${wd.level}% walk-down · click to edit`}
     >
-      <span className={`inline-block w-1.5 h-1.5 rounded-full ${s.solid}`} />
-      <span className="truncate">{wd.level}% · <Highlight text={wd.name} /></span>
+      <span className={`inline-block w-1.5 h-1.5 rounded-full mt-[3px] shrink-0 ${s.solid}`} />
+      <span className="break-words min-w-0">{wd.level}% · <Highlight text={wd.name} /></span>
     </button>
   );
 }
