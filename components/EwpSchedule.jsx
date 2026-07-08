@@ -36,6 +36,7 @@ export default function EwpSchedule() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState(() => new Set(Object.keys(TYPE_COLORS)));
   const [view, setView] = useState("calendar"); // calendar | list
+  const [expandedEwps, setExpandedEwps] = useState(() => new Set());
 
   // find first month that has events for default position
   const firstEventDate = useMemo(() => {
@@ -91,6 +92,30 @@ export default function EwpSchedule() {
     });
   }
 
+  function toggleExpand(id) {
+    setExpandedEwps((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const deliverablesByEwp = useMemo(() => {
+    const map = {};
+    for (const e of SCHEDULE.events) {
+      (map[e.ewp] = map[e.ewp] || []).push(e);
+    }
+    for (const id in map) {
+      map[id].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    }
+    return map;
+  }, []);
+
+  function jumpToDeliverable(dateStr) {
+    const d = parseDate(dateStr);
+    setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+  }
+
   // Build calendar grid for cursor month
   const grid = useMemo(() => {
     const year = cursor.getFullYear();
@@ -141,25 +166,63 @@ export default function EwpSchedule() {
         <div style={{ overflowY: "auto", flex: 1, padding: "6px 8px" }}>
           {ewpFilteredList.map((ewp) => {
             const on = selected.has(ewp.id);
+            const expanded = expandedEwps.has(ewp.id);
+            const deliverables = deliverablesByEwp[ewp.id] || [];
             return (
-              <div key={ewp.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 6px", borderRadius: 6, cursor: "pointer", background: on ? "#fff" : "transparent" }}
-                onClick={() => toggleEwp(ewp.id)}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#fff")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = on ? "#fff" : "transparent")}
-              >
-                {on ? <CheckSquare size={16} color="#D04E00" /> : <Square size={16} color="#c4c4c4" />}
-                <span style={{ width: 10, height: 10, borderRadius: 3, background: ewpColor(ewp.id), flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: on ? 600 : 400 }}>
-                    <span style={{ color: "#9ca3af", fontWeight: 600, marginRight: 5 }}>{ewp.id}</span>
-                    {ewp.name}
+              <div key={ewp.id}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 6px", borderRadius: 6, cursor: "pointer", background: on ? "#fff" : "transparent" }}
+                  onClick={() => toggleEwp(ewp.id)}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#fff")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = on ? "#fff" : "transparent")}
+                >
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleExpand(ewp.id); }}
+                    title={expanded ? "Collapse deliverables" : "Expand deliverables"}
+                    style={{ fontSize: 10, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: "0 2px", width: 14, textAlign: "center" }}
+                  >
+                    {expanded ? "▾" : "▸"}
+                  </button>
+                  {on ? <CheckSquare size={16} color="#D04E00" /> : <Square size={16} color="#c4c4c4" />}
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: ewpColor(ewp.id), flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: on ? 600 : 400 }}>
+                      <span style={{ color: "#9ca3af", fontWeight: 600, marginRight: 5 }}>{ewp.id}</span>
+                      {ewp.name}
+                    </div>
                   </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); soloEwp(ewp.id); }}
+                    title="Show only this EWP"
+                    style={{ fontSize: 10, color: "#1F4E79", background: "none", border: "none", cursor: "pointer", padding: "2px 4px", fontWeight: 600, opacity: 0.7 }}
+                  >only</button>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); soloEwp(ewp.id); }}
-                  title="Show only this EWP"
-                  style={{ fontSize: 10, color: "#1F4E79", background: "none", border: "none", cursor: "pointer", padding: "2px 4px", fontWeight: 600, opacity: 0.7 }}
-                >only</button>
+                {expanded && (
+                  <div style={{ marginLeft: 22, marginTop: 2, marginBottom: 6, paddingLeft: 8, borderLeft: `2px solid ${ewpColor(ewp.id)}` }}>
+                    {deliverables.length === 0 ? (
+                      <div style={{ fontSize: 10.5, color: "#9ca3af", padding: "3px 4px", fontStyle: "italic" }}>No deliverables</div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 9.5, color: "#9ca3af", padding: "3px 4px 4px", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
+                          {deliverables.length} deliverable{deliverables.length === 1 ? "" : "s"}
+                        </div>
+                        {deliverables.map((d, i) => (
+                          <button
+                            key={i}
+                            onClick={() => jumpToDeliverable(d.date)}
+                            title={`Jump to ${d.date}`}
+                            style={{ display: "flex", alignItems: "flex-start", gap: 5, padding: "3px 4px", background: "none", border: "none", cursor: "pointer", width: "100%", textAlign: "left", borderRadius: 3, fontSize: 10.5, color: "#1a1a1a" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f0f0")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                          >
+                            <span style={{ fontFamily: "ui-monospace, monospace", color: "#6b7280", fontSize: 9.5, minWidth: 60, flexShrink: 0, paddingTop: 1 }}>{d.date}</span>
+                            <span style={{ fontSize: 8.5, fontWeight: 700, color: "#fff", background: TYPE_COLORS[d.type], padding: "1px 5px", borderRadius: 3, minWidth: 34, textAlign: "center", flexShrink: 0, marginTop: 1 }}>{d.type}</span>
+                            <span style={{ flex: 1, lineHeight: 1.25, wordBreak: "break-word" }}>{d.name}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
