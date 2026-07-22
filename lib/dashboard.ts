@@ -15,6 +15,7 @@ type RawRow = {
   ticket_count: number | string;
   vendor_system_incurred: string | number | null;
   vendor_gap: string | number | null;
+  vendor_job_ref: string | null;
 };
 
 function n(v: string | number): number {
@@ -50,6 +51,7 @@ export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
     ticket_count: Number(r.ticket_count),
     vendor_system_incurred: nn(r.vendor_system_incurred),
     vendor_gap: nn(r.vendor_gap),
+    vendor_job_ref: r.vendor_job_ref,
   }));
 }
 

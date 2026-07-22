@@ -11,6 +11,7 @@ type PatchBody = {
   scope?: string | null;
   committed_amount?: number;
   vendor_system_incurred?: number | null;
+  vendor_job_ref?: string | null;
 };
 
 export async function PATCH(
@@ -74,6 +75,10 @@ export async function PATCH(
         updates.vendor_system_incurred = n;
       }
     }
+  }
+  if (body.vendor_job_ref !== undefined) {
+    const v = (body.vendor_job_ref ?? '').trim();
+    updates.vendor_job_ref = v || null;
   }
 
   if (errors.length > 0) {

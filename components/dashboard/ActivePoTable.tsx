@@ -9,6 +9,7 @@ type SortKey =
   | 'po_number'
   | 'project_cost_code'
   | 'vendor_display_name'
+  | 'vendor_job_ref'
   | 'committed'
   | 'lem_to_date'
   | 'vendor_system_incurred'
@@ -49,7 +50,8 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
           r.po_number.toLowerCase().includes(q) ||
           r.vendor_display_name.toLowerCase().includes(q) ||
           (r.scope ?? '').toLowerCase().includes(q) ||
-          (r.project_cost_code ?? '').toLowerCase().includes(q)
+          (r.project_cost_code ?? '').toLowerCase().includes(q) ||
+          (r.vendor_job_ref ?? '').toLowerCase().includes(q)
       );
     }
     if (vendorFilter !== 'all') {
@@ -160,6 +162,13 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
               >
                 Vendor
               </SortableTh>
+              <SortableTh
+                active={sortKey === 'vendor_job_ref'}
+                dir={sortDir}
+                onClick={() => toggleSort('vendor_job_ref')}
+              >
+                Vendor Job #
+              </SortableTh>
               <Th>Description</Th>
               <SortableTh
                 right
@@ -224,6 +233,11 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 <Td mono>{r.po_number}</Td>
                 <Td mono>{r.project_cost_code ?? '—'}</Td>
                 <Td>{r.vendor_display_name}</Td>
+                <VendorJobRefCell
+                  poId={r.id}
+                  value={r.vendor_job_ref}
+                  onSaved={() => router.refresh()}
+                />
                 <Td className="max-w-xs">
                   <span className="text-enbridge-black/80 line-clamp-2">
                     {r.scope ?? '—'}
@@ -244,7 +258,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={10}
+                  colSpan={11}
                   className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
                 >
                   {rows.length === 0
@@ -373,6 +387,98 @@ function GapCell({ value }: { value: number | null }) {
   return (
     <td className={`px-4 py-3 text-right tabular-nums ${bg} ${text}`}>
       {formatMoney(value)}
+    </td>
+  );
+}
+
+function VendorJobRefCell({
+  poId,
+  value,
+  onSaved,
+}: {
+  poId: string;
+  value: string | null;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(value ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function startEdit(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(value ?? '');
+    setEditing(true);
+    setError('');
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError('');
+    setDraft(value ?? '');
+  }
+
+  async function commit() {
+    const trimmed = draft.trim();
+    const next = trimmed === '' ? null : trimmed;
+    if (next === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/pos/${poId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor_job_ref: next }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Save failed (${res.status})`);
+      }
+      setEditing(false);
+      onSaved();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <td
+      className="px-4 py-3 align-top text-xs font-mono"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {editing ? (
+        <div className="flex flex-col gap-1">
+          <input
+            type="text"
+            autoFocus
+            value={draft}
+            disabled={saving}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              else if (e.key === 'Escape') cancel();
+            }}
+            placeholder="Job # / ref"
+            className="w-32 rounded border border-enbridge-black px-2 py-1 text-xs font-mono focus:outline-none"
+          />
+          {error && <span className="text-[10px] text-red-700 font-sans">{error}</span>}
+        </div>
+      ) : (
+        <button
+          onClick={startEdit}
+          title="Click to enter the vendor's internal job # or reference"
+          className="text-left hover:bg-black/[0.04] hover:ring-1 hover:ring-black/10 rounded px-1 py-0.5 min-w-[80px] block"
+        >
+          {value ? value : <span className="text-enbridge-black/35 font-sans">—</span>}
+        </button>
+      )}
     </td>
   );
 }

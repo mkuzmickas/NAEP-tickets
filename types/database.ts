@@ -9,6 +9,7 @@ export type ServicePO = {
   committed_amount: number;
   ap_invoiced_amount: number;
   vendor_system_incurred: number | null;
+  vendor_job_ref: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -70,6 +71,7 @@ export type ActivePoSummary = {
   ticket_count: number;
   vendor_system_incurred: number | null;
   vendor_gap: number | null;
+  vendor_job_ref: string | null;
 };
 
 export type TicketRow = Ticket & {
