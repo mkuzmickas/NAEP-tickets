@@ -11,6 +11,8 @@ type SortKey =
   | 'vendor_display_name'
   | 'committed'
   | 'lem_to_date'
+  | 'vendor_system_incurred'
+  | 'vendor_gap'
   | 'remaining'
   | 'pct_used'
   | 'ticket_count';
@@ -19,6 +21,8 @@ type SortDir = 'asc' | 'desc';
 const NUMERIC_KEYS: SortKey[] = [
   'committed',
   'lem_to_date',
+  'vendor_system_incurred',
+  'vendor_gap',
   'remaining',
   'pct_used',
   'ticket_count',
@@ -55,8 +59,11 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
       const av = a[sortKey];
       const bv = b[sortKey];
       let cmp = 0;
-      if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
-      else cmp = String(av ?? '').localeCompare(String(bv ?? ''));
+      if (av == null && bv == null) cmp = 0;
+      else if (av == null) cmp = 1;
+      else if (bv == null) cmp = -1;
+      else if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+      else cmp = String(av).localeCompare(String(bv));
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [rows, search, vendorFilter, sortKey, sortDir]);
@@ -172,6 +179,22 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
               </SortableTh>
               <SortableTh
                 right
+                active={sortKey === 'vendor_system_incurred'}
+                dir={sortDir}
+                onClick={() => toggleSort('vendor_system_incurred')}
+              >
+                Vendor Incurred
+              </SortableTh>
+              <SortableTh
+                right
+                active={sortKey === 'vendor_gap'}
+                dir={sortDir}
+                onClick={() => toggleSort('vendor_gap')}
+              >
+                Gap
+              </SortableTh>
+              <SortableTh
+                right
                 active={sortKey === 'remaining'}
                 dir={sortDir}
                 onClick={() => toggleSort('remaining')}
@@ -208,6 +231,12 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 </Td>
                 <Td right>{formatMoney(r.committed)}</Td>
                 <Td right>{formatMoney(r.lem_to_date)}</Td>
+                <VendorIncurredCell
+                  poId={r.id}
+                  value={r.vendor_system_incurred}
+                  onSaved={() => router.refresh()}
+                />
+                <GapCell value={r.vendor_gap} />
                 <Td right>{formatMoney(r.remaining)}</Td>
                 <PctCell value={r.pct_used} />
               </tr>
@@ -215,7 +244,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={10}
                   className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
                 >
                   {rows.length === 0
@@ -321,6 +350,131 @@ function PctCell({ value }: { value: number }) {
   return (
     <td className={`px-4 py-3 text-right tabular-nums ${bg} ${text}`}>
       {formatPct(value)}
+    </td>
+  );
+}
+
+function GapCell({ value }: { value: number | null }) {
+  if (value == null) {
+    return <td className="px-4 py-3 text-right text-enbridge-black/35 tabular-nums">—</td>;
+  }
+  let bg = '';
+  let text = 'text-enbridge-black/75';
+  const abs = Math.abs(value);
+  if (abs < 0.5) {
+    text = 'text-green-800 font-medium';
+  } else if (value > 0) {
+    bg = 'bg-red-100';
+    text = 'text-red-900 font-semibold';
+  } else {
+    bg = 'bg-amber-100';
+    text = 'text-amber-900 font-semibold';
+  }
+  return (
+    <td className={`px-4 py-3 text-right tabular-nums ${bg} ${text}`}>
+      {formatMoney(value)}
+    </td>
+  );
+}
+
+function VendorIncurredCell({
+  poId,
+  value,
+  onSaved,
+}: {
+  poId: string;
+  value: number | null;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(value == null ? '' : String(value));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function startEdit(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(value == null ? '' : String(value));
+    setEditing(true);
+    setError('');
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError('');
+    setDraft(value == null ? '' : String(value));
+  }
+
+  async function commit() {
+    const trimmed = draft.trim();
+    const next = trimmed === '' ? null : Number(trimmed);
+    if (next !== null && (!Number.isFinite(next) || next < 0)) {
+      setError('Enter a number ≥ 0, or leave blank to clear.');
+      return;
+    }
+    if (next === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/pos/${poId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor_system_incurred: next }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Save failed (${res.status})`);
+      }
+      setEditing(false);
+      onSaved();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <td
+      className="px-4 py-3 text-right tabular-nums"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {editing ? (
+        <div className="flex flex-col items-end gap-1">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            autoFocus
+            value={draft}
+            disabled={saving}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              else if (e.key === 'Escape') cancel();
+            }}
+            placeholder="blank = clear"
+            className="w-28 rounded border border-enbridge-black px-2 py-1 text-right text-sm focus:outline-none"
+          />
+          {error && <span className="text-[10px] text-red-700">{error}</span>}
+        </div>
+      ) : (
+        <button
+          onClick={startEdit}
+          title="Click to edit — what the vendor's system says they've submitted"
+          className="w-full text-right hover:bg-black/[0.04] hover:ring-1 hover:ring-black/10 rounded px-1 py-0.5"
+        >
+          {value == null ? (
+            <span className="text-enbridge-black/35">—</span>
+          ) : (
+            formatMoney(value)
+          )}
+        </button>
+      )}
     </td>
   );
 }

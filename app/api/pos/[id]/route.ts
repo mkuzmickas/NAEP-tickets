@@ -10,6 +10,7 @@ type PatchBody = {
   project_cost_code?: string | null;
   scope?: string | null;
   committed_amount?: number;
+  vendor_system_incurred?: number | null;
 };
 
 export async function PATCH(
@@ -60,6 +61,18 @@ export async function PATCH(
       errors.push('Committed amount must be a positive number.');
     } else {
       updates.committed_amount = n;
+    }
+  }
+  if (body.vendor_system_incurred !== undefined) {
+    if (body.vendor_system_incurred === null) {
+      updates.vendor_system_incurred = null;
+    } else {
+      const n = Number(body.vendor_system_incurred);
+      if (!Number.isFinite(n) || n < 0) {
+        errors.push('Vendor system incurred must be zero or a positive number.');
+      } else {
+        updates.vendor_system_incurred = n;
+      }
     }
   }
 

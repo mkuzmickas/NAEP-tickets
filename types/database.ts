@@ -8,6 +8,7 @@ export type ServicePO = {
   scope: string | null;
   committed_amount: number;
   ap_invoiced_amount: number;
+  vendor_system_incurred: number | null;
   notes: string | null;
   created_at: string;
 };
@@ -67,6 +68,8 @@ export type ActivePoSummary = {
   remaining: number;
   pct_used: number;
   ticket_count: number;
+  vendor_system_incurred: number | null;
+  vendor_gap: number | null;
 };
 
 export type TicketRow = Ticket & {

@@ -13,10 +13,18 @@ type RawRow = {
   remaining: string | number;
   pct_used: string | number;
   ticket_count: number | string;
+  vendor_system_incurred: string | number | null;
+  vendor_gap: string | number | null;
 };
 
 function n(v: string | number): number {
   return typeof v === 'number' ? v : Number(v);
+}
+
+function nn(v: string | number | null): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const x = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(x) ? x : null;
 }
 
 export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
@@ -40,6 +48,8 @@ export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
     remaining: n(r.remaining),
     pct_used: n(r.pct_used),
     ticket_count: Number(r.ticket_count),
+    vendor_system_incurred: nn(r.vendor_system_incurred),
+    vendor_gap: nn(r.vendor_gap),
   }));
 }
 
