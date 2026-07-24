@@ -12,7 +12,7 @@ export default async function AuthedLayout({ children }: { children: React.React
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-[var(--page-bg)]">
+    <div className="authed-shell h-screen flex overflow-hidden bg-[var(--page-bg)]">
       <Sidebar />
       <div className="authed-body flex flex-1 min-w-0 flex-col overflow-hidden">
         <ProgramBar userEmail={user.email ?? ''} />

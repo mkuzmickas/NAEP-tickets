@@ -81,31 +81,53 @@
     display: none !important;
   }
 
-  /* Force document flow through EVERY flex/overflow ancestor. Chrome
-     refuses to honour break-after: page on descendants of a flex
-     container, so any ancestor left as flex silently collapses the
-     whole calendar onto one page. */
-  main,
+  /* Force block flow + release every height/overflow constraint on
+     the whole ancestor chain from <body> down to .month-block.
+     Chrome silently refuses to honour break-after: page on any
+     descendant of a flex or overflow:hidden container — one missed
+     wrapper collapses the whole calendar onto one page. */
+  html,
+  body,
+  .authed-shell,
   .authed-body,
+  main,
   .schedule-root,
   .schedule-main-col,
   .schedule-cal-wrap,
   .schedule-months {
     display: block !important;
     height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
+    position: static !important;
   }
   .schedule-cal-wrap {
     padding: 0 !important;
   }
 
-  /* One month per page */
+  /* One month per page.
+     Using page-break-BEFORE on every month AND page-break-AFTER on
+     each month — belt-and-suspenders because Chrome's page-break
+     support in nested layouts is famously flaky. */
   .month-block {
     margin: 0 !important;
     padding: 0 !important;
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    break-before: page !important;
+    page-break-before: always !important;
     break-after: page !important;
     page-break-after: always !important;
     break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  /* First visible month must NOT force a blank page before itself. */
+  .schedule-months > .month-block:not(.print-skip):first-of-type,
+  .schedule-months > .month-block:not(.print-skip):first-child {
+    break-before: auto !important;
+    page-break-before: auto !important;
   }
   .month-block.print-skip {
     display: none !important;
