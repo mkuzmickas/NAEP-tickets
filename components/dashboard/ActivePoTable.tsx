@@ -8,26 +8,19 @@ import type { ActivePoSummary } from '@/types/database';
 
 type SortKey =
   | 'po_number'
-  | 'project_cost_code'
   | 'vendor_display_name'
-  | 'vendor_job_ref'
   | 'committed'
   | 'lem_to_date'
-  | 'vendor_system_incurred'
-  | 'vendor_gap'
-  | 'remaining'
   | 'pct_used'
-  | 'ticket_count';
-type SortDir = 'asc' | 'desc';
+  | 'vendor_gap';
 
-const NUMERIC_KEYS: SortKey[] = [
-  'committed',
-  'lem_to_date',
-  'vendor_system_incurred',
-  'vendor_gap',
-  'remaining',
-  'pct_used',
-  'ticket_count',
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'pct_used', label: '% Used' },
+  { key: 'lem_to_date', label: 'LEM-to-Date' },
+  { key: 'committed', label: 'Committed' },
+  { key: 'vendor_gap', label: 'Reconciliation Gap' },
+  { key: 'vendor_display_name', label: 'Vendor' },
+  { key: 'po_number', label: 'PO Number' },
 ];
 
 export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
@@ -35,7 +28,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
   const [search, setSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('pct_used');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const vendorOptions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.vendor_display_name))).sort(),
@@ -79,15 +72,6 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
     [filtered]
   );
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir(NUMERIC_KEYS.includes(key) ? 'desc' : 'asc');
-    }
-  }
-
   function clearFilters() {
     setSearch('');
     setVendorFilter('all');
@@ -101,11 +85,19 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
         title="Purchase Orders"
         subtitle={
           <>
-            Showing <span className="tabular font-medium text-[var(--text)]">{filtered.length}</span> of {rows.length} ·{' '}
-            <span className="tabular font-medium text-[var(--text)]">{formatMoney(filteredTotals.lem)}</span>
-            {' '}LEM of{' '}
-            <span className="tabular font-medium text-[var(--text)]">{formatMoney(filteredTotals.committed)}</span>
-            {' '}committed
+            Showing{' '}
+            <span className="tabular font-medium text-[var(--text)]">
+              {filtered.length}
+            </span>{' '}
+            of {rows.length} ·{' '}
+            <span className="tabular font-medium text-[var(--text)]">
+              {formatMoney(filteredTotals.lem)}
+            </span>{' '}
+            LEM of{' '}
+            <span className="tabular font-medium text-[var(--text)]">
+              {formatMoney(filteredTotals.committed)}
+            </span>{' '}
+            committed
           </>
         }
       />
@@ -120,7 +112,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
         <select
           value={vendorFilter}
           onChange={(e) => setVendorFilter(e.target.value)}
-          className="w-[200px] rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--text)]"
+          className="w-[180px] rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--text)]"
         >
           <option value="all">All vendors</option>
           {vendorOptions.map((v) => (
@@ -129,279 +121,246 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             </option>
           ))}
         </select>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--text)]"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>
+              Sort: {o.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+          title={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
+          className="rounded-md border border-[var(--border)] bg-[var(--surface)] w-8 h-8 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+        >
+          {sortDir === 'asc' ? '▲' : '▼'}
+        </button>
         {filtersActive && (
           <button
             onClick={clearFilters}
             className="text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]"
           >
-            Clear filters
+            Clear
           </button>
         )}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--border)]">
-              <SortableTh
-                active={sortKey === 'po_number'}
-                dir={sortDir}
-                onClick={() => toggleSort('po_number')}
-              >
-                PO Number
-              </SortableTh>
-              <SortableTh
-                active={sortKey === 'project_cost_code'}
-                dir={sortDir}
-                onClick={() => toggleSort('project_cost_code')}
-              >
-                Project Cost Code
-              </SortableTh>
-              <SortableTh
-                active={sortKey === 'vendor_display_name'}
-                dir={sortDir}
-                onClick={() => toggleSort('vendor_display_name')}
-              >
-                Vendor
-              </SortableTh>
-              <SortableTh
-                active={sortKey === 'vendor_job_ref'}
-                dir={sortDir}
-                onClick={() => toggleSort('vendor_job_ref')}
-              >
-                Vendor Job #
-              </SortableTh>
-              <Th>Description</Th>
-              <SortableTh
-                right
-                active={sortKey === 'committed'}
-                dir={sortDir}
-                onClick={() => toggleSort('committed')}
-              >
-                Committed
-              </SortableTh>
-              <SortableTh
-                right
-                active={sortKey === 'lem_to_date'}
-                dir={sortDir}
-                onClick={() => toggleSort('lem_to_date')}
-              >
-                LEM-to-Date
-              </SortableTh>
-              <SortableTh
-                right
-                active={sortKey === 'vendor_system_incurred'}
-                dir={sortDir}
-                onClick={() => toggleSort('vendor_system_incurred')}
-              >
-                Vendor Incurred
-              </SortableTh>
-              <SortableTh
-                right
-                active={sortKey === 'vendor_gap'}
-                dir={sortDir}
-                onClick={() => toggleSort('vendor_gap')}
-              >
-                Gap
-              </SortableTh>
-              <SortableTh
-                right
-                active={sortKey === 'remaining'}
-                dir={sortDir}
-                onClick={() => toggleSort('remaining')}
-              >
-                Remaining
-              </SortableTh>
-              <SortableTh
-                right
-                active={sortKey === 'pct_used'}
-                dir={sortDir}
-                onClick={() => toggleSort('pct_used')}
-              >
-                % Used
-              </SortableTh>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => (
-              <tr
-                key={r.id}
-                onClick={() =>
-                  router.push(`/tickets?po=${encodeURIComponent(r.po_number)}`)
-                }
-                className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)] cursor-pointer"
-                title={`Click to see all tickets for ${r.po_number}`}
-              >
-                <Td mono>{r.po_number}</Td>
-                <Td mono muted>{r.project_cost_code ?? '—'}</Td>
-                <Td>{r.vendor_display_name}</Td>
-                <VendorJobRefCell
-                  poId={r.id}
-                  value={r.vendor_job_ref}
-                  onSaved={() => router.refresh()}
-                />
-                <Td className="max-w-xs">
-                  <span className="text-[var(--text)] line-clamp-2">
-                    {r.scope ?? '—'}
-                  </span>
-                </Td>
-                <Td right>{formatMoney(r.committed)}</Td>
-                <Td right>{formatMoney(r.lem_to_date)}</Td>
-                <VendorIncurredCell
-                  poId={r.id}
-                  value={r.vendor_system_incurred}
-                  onSaved={() => router.refresh()}
-                />
-                <GapCell value={r.vendor_gap} />
-                <Td right>{formatMoney(r.remaining)}</Td>
-                <PctCell value={r.pct_used} />
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={11} className="p-0">
-                  <EmptyState
-                    title={
-                      rows.length === 0
-                        ? 'No POs on file yet.'
-                        : 'No POs match the current filters.'
-                    }
-                    hint={
-                      rows.length === 0
-                        ? 'Add one from the Purchase Orders page.'
-                        : undefined
-                    }
-                  />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title={
+            rows.length === 0
+              ? 'No POs on file yet.'
+              : 'No POs match the current filters.'
+          }
+          hint={
+            rows.length === 0
+              ? 'Add one from the Purchase Orders page.'
+              : undefined
+          }
+        />
+      ) : (
+        <div className="p-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {filtered.map((po) => (
+            <PoSummaryCard
+              key={po.id}
+              po={po}
+              onClick={() =>
+                router.push(`/tickets?po=${encodeURIComponent(po.po_number)}`)
+              }
+              onRefresh={() => router.refresh()}
+            />
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
 
-function Th({
-  children,
-  right,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-}) {
-  return (
-    <th
-      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] ${
-        right ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function SortableTh({
-  children,
-  active,
-  dir,
+function PoSummaryCard({
+  po,
   onClick,
-  right,
+  onRefresh,
 }: {
-  children: React.ReactNode;
-  active: boolean;
-  dir: SortDir;
+  po: ActivePoSummary;
   onClick: () => void;
-  right?: boolean;
+  onRefresh: () => void;
 }) {
+  const pctTone =
+    po.pct_used > 100
+      ? 'bg-[var(--over-bg)] text-[var(--over)]'
+      : po.pct_used > 80
+        ? 'bg-[var(--warn-bg)] text-[var(--warn)]'
+        : 'bg-[var(--surface-2)] text-[var(--text-muted)]';
+
+  const remainingTone =
+    po.remaining < 0
+      ? 'text-[var(--over)]'
+      : po.pct_used > 80
+        ? 'text-[var(--warn)]'
+        : 'text-[var(--text)]';
+
   return (
-    <th
-      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] ${
-        right ? 'text-right' : 'text-left'
-      }`}
+    <div
+      onClick={onClick}
+      className="group border border-[var(--border)] rounded-lg bg-[var(--surface)] p-5 hover:border-[var(--text)]/40 hover:shadow-sm cursor-pointer transition-all"
+      title={`Click to see all tickets for ${po.po_number}`}
     >
-      <button
-        onClick={onClick}
-        className="inline-flex items-center gap-1 hover:text-enbridge-black"
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="min-w-0">
+          <div className="font-mono text-sm font-semibold tracking-wide uppercase text-[var(--text)]">
+            {po.po_number}
+          </div>
+          <div className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+            {po.vendor_display_name}
+            {po.project_cost_code && (
+              <> · <span className="font-mono">{po.project_cost_code}</span></>
+            )}
+          </div>
+        </div>
+        <div
+          className={`text-xs font-semibold tabular px-2 py-1 rounded whitespace-nowrap ${pctTone}`}
+        >
+          {formatPct(po.pct_used)}
+        </div>
+      </div>
+
+      {/* Scope */}
+      <p className="text-sm text-[var(--text)]/85 line-clamp-2 mb-4 min-h-[2.5rem]">
+        {po.scope ?? <span className="text-[var(--text-muted)] italic">No description</span>}
+      </p>
+
+      {/* Money grid */}
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <MiniStat label="Committed" value={formatMoney(po.committed)} />
+        <MiniStat label="LEM-to-Date" value={formatMoney(po.lem_to_date)} />
+        <MiniStat
+          label="Remaining"
+          value={formatMoney(po.remaining)}
+          valueClass={remainingTone}
+        />
+      </div>
+
+      {/* Progress bar */}
+      <ProgressBar pct={po.pct_used} />
+
+      {/* Vendor reconciliation row */}
+      <div
+        className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-[var(--border)]"
+        onClick={(e) => e.stopPropagation()}
       >
-        {children}
-        <span className="text-enbridge-black/40">
-          {active ? (dir === 'asc' ? '▲' : '▼') : '▾'}
+        <EditableJobRef
+          poId={po.id}
+          value={po.vendor_job_ref}
+          onSaved={onRefresh}
+        />
+        <EditableIncurred
+          poId={po.id}
+          value={po.vendor_system_incurred}
+          onSaved={onRefresh}
+        />
+        <GapMini value={po.vendor_gap} />
+      </div>
+
+      {/* Ticket count */}
+      <div className="mt-3 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+        <span className="tabular">
+          {po.ticket_count} ticket{po.ticket_count === 1 ? '' : 's'}
         </span>
-      </button>
-    </th>
+        <span className="text-[var(--text-muted)]/60 group-hover:text-[var(--text)] transition-colors">
+          View tickets →
+        </span>
+      </div>
+    </div>
   );
 }
 
-function Td({
-  children,
-  right,
-  mono,
-  muted,
-  className,
+function MiniStat({
+  label,
+  value,
+  valueClass = 'text-[var(--text)]',
 }: {
-  children: React.ReactNode;
-  right?: boolean;
-  mono?: boolean;
-  muted?: boolean;
-  className?: string;
+  label: string;
+  value: string;
+  valueClass?: string;
 }) {
   return (
-    <td
-      className={[
-        'px-3 py-2.5 align-top',
-        right ? 'text-right tabular' : '',
-        mono ? 'font-mono text-xs tabular' : 'text-sm',
-        muted ? 'text-[var(--text-muted)]' : '',
-        className ?? '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-    >
-      {children}
-    </td>
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">
+        {label}
+      </div>
+      <div className={`tabular text-sm font-semibold mt-0.5 ${valueClass}`}>
+        {value}
+      </div>
+    </div>
   );
 }
 
-function PctCell({ value }: { value: number }) {
-  let cls = 'text-[var(--text)]';
-  if (value > 100) {
-    cls = 'text-[var(--over)] font-semibold';
-  } else if (value > 80) {
-    cls = 'text-[var(--warn)] font-semibold';
-  } else if (value >= 0) {
-    cls = 'text-[var(--text-muted)]';
-  }
-  return (
-    <td className={`px-3 py-2.5 text-right tabular ${cls}`}>
-      {formatPct(value)}
-    </td>
-  );
-}
-
-function GapCell({ value }: { value: number | null }) {
+function GapMini({ value }: { value: number | null }) {
+  const label = 'Gap';
   if (value == null) {
     return (
-      <td className="px-3 py-2.5 text-right text-[var(--text-muted)]/50 tabular">
-        —
-      </td>
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">
+          {label}
+        </div>
+        <div className="tabular text-sm mt-0.5 text-[var(--text-muted)]/60">
+          —
+        </div>
+      </div>
     );
   }
   const abs = Math.abs(value);
-  let cls = 'text-[var(--text-muted)]';
-  if (abs < 0.5) {
-    cls = 'text-[var(--under)]';
-  } else if (value > 0) {
-    cls = 'text-[var(--over)] font-semibold';
-  } else {
-    cls = 'text-[var(--warn)] font-semibold';
-  }
+  const cls =
+    abs < 0.5
+      ? 'text-[var(--under)]'
+      : value > 0
+        ? 'text-[var(--over)]'
+        : 'text-[var(--warn)]';
   return (
-    <td className={`px-3 py-2.5 text-right tabular ${cls}`}>
-      {formatMoney(value)}
-    </td>
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">
+        {label}
+      </div>
+      <div className={`tabular text-sm font-semibold mt-0.5 ${cls}`}>
+        {formatMoney(value)}
+      </div>
+    </div>
   );
 }
 
-function VendorJobRefCell({
+function ProgressBar({ pct }: { pct: number }) {
+  const capped = Math.min(Math.max(pct, 0), 100);
+  const overflow = Math.max(pct - 100, 0);
+  const tone =
+    pct > 100
+      ? 'bg-[var(--over)]'
+      : pct > 80
+        ? 'bg-[var(--warn)]'
+        : 'bg-[var(--under)]';
+  return (
+    <div className="flex h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
+      <div
+        className={`h-full transition-all ${tone}`}
+        style={{ width: `${capped}%` }}
+      />
+      {overflow > 0 && (
+        <div
+          className="h-full bg-[var(--over)] opacity-60"
+          style={{ width: `${Math.min(overflow, 100)}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- Inline editors ------------------------------------------------ */
+
+function EditableJobRef({
   poId,
   value,
   onSaved,
@@ -411,22 +370,9 @@ function VendorJobRefCell({
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<string>(value ?? '');
+  const [draft, setDraft] = useState(value ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  function startEdit(e: React.MouseEvent) {
-    e.stopPropagation();
-    setDraft(value ?? '');
-    setEditing(true);
-    setError('');
-  }
-
-  function cancel() {
-    setEditing(false);
-    setError('');
-    setDraft(value ?? '');
-  }
 
   async function commit() {
     const trimmed = draft.trim();
@@ -450,50 +396,57 @@ function VendorJobRefCell({
       setEditing(false);
       onSaved();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <td
-      className="px-4 py-3 align-top text-xs font-mono"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">
+        Vendor Job #
+      </div>
       {editing ? (
-        <div className="flex flex-col gap-1">
-          <input
-            type="text"
-            autoFocus
-            value={draft}
-            disabled={saving}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit();
-              else if (e.key === 'Escape') cancel();
-            }}
-            placeholder="Job # / ref"
-            className="w-32 rounded border border-enbridge-black px-2 py-1 text-xs font-mono focus:outline-none"
-          />
-          {error && <span className="text-[10px] text-red-700 font-sans">{error}</span>}
-        </div>
+        <input
+          type="text"
+          autoFocus
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            else if (e.key === 'Escape') {
+              setEditing(false);
+              setDraft(value ?? '');
+            }
+          }}
+          placeholder="Job # / ref"
+          className="w-full mt-0.5 rounded border border-[var(--text)] px-1.5 py-0.5 text-sm font-mono focus:outline-none"
+        />
       ) : (
         <button
-          onClick={startEdit}
+          onClick={() => {
+            setDraft(value ?? '');
+            setEditing(true);
+          }}
+          className="mt-0.5 w-full text-left font-mono text-sm hover:bg-[var(--surface-2)] hover:ring-1 hover:ring-[var(--border)] rounded px-1 py-0.5"
           title="Click to enter the vendor's internal job # or reference"
-          className="text-left hover:bg-black/[0.04] hover:ring-1 hover:ring-black/10 rounded px-1 py-0.5 min-w-[80px] block"
         >
-          {value ? value : <span className="text-enbridge-black/35 font-sans">—</span>}
+          {value ? (
+            value
+          ) : (
+            <span className="text-[var(--text-muted)]/60">—</span>
+          )}
         </button>
       )}
-    </td>
+      {error && <span className="block text-[10px] text-[var(--over)] mt-0.5">{error}</span>}
+    </div>
   );
 }
 
-function VendorIncurredCell({
+function EditableIncurred({
   poId,
   value,
   onSaved,
@@ -503,28 +456,15 @@ function VendorIncurredCell({
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<string>(value == null ? '' : String(value));
+  const [draft, setDraft] = useState(value == null ? '' : String(value));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  function startEdit(e: React.MouseEvent) {
-    e.stopPropagation();
-    setDraft(value == null ? '' : String(value));
-    setEditing(true);
-    setError('');
-  }
-
-  function cancel() {
-    setEditing(false);
-    setError('');
-    setDraft(value == null ? '' : String(value));
-  }
 
   async function commit() {
     const trimmed = draft.trim();
     const next = trimmed === '' ? null : Number(trimmed);
     if (next !== null && (!Number.isFinite(next) || next < 0)) {
-      setError('Enter a number ≥ 0, or leave blank to clear.');
+      setError('Enter a number ≥ 0');
       return;
     }
     if (next === value) {
@@ -546,51 +486,54 @@ function VendorIncurredCell({
       setEditing(false);
       onSaved();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <td
-      className="px-4 py-3 text-right tabular-nums"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">
+        Vendor Incurred
+      </div>
       {editing ? (
-        <div className="flex flex-col items-end gap-1">
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            autoFocus
-            value={draft}
-            disabled={saving}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit();
-              else if (e.key === 'Escape') cancel();
-            }}
-            placeholder="blank = clear"
-            className="w-28 rounded border border-enbridge-black px-2 py-1 text-right text-sm focus:outline-none"
-          />
-          {error && <span className="text-[10px] text-red-700">{error}</span>}
-        </div>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          autoFocus
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            else if (e.key === 'Escape') {
+              setEditing(false);
+              setDraft(value == null ? '' : String(value));
+            }
+          }}
+          placeholder="blank = clear"
+          className="w-full mt-0.5 rounded border border-[var(--text)] px-1.5 py-0.5 text-sm tabular focus:outline-none"
+        />
       ) : (
         <button
-          onClick={startEdit}
+          onClick={() => {
+            setDraft(value == null ? '' : String(value));
+            setEditing(true);
+          }}
+          className="mt-0.5 w-full text-left tabular text-sm font-semibold hover:bg-[var(--surface-2)] hover:ring-1 hover:ring-[var(--border)] rounded px-1 py-0.5"
           title="Click to edit — what the vendor's system says they've submitted"
-          className="w-full text-right hover:bg-black/[0.04] hover:ring-1 hover:ring-black/10 rounded px-1 py-0.5"
         >
           {value == null ? (
-            <span className="text-enbridge-black/35">—</span>
+            <span className="text-[var(--text-muted)]/60 font-normal">—</span>
           ) : (
             formatMoney(value)
           )}
         </button>
       )}
-    </td>
+      {error && <span className="block text-[10px] text-[var(--over)] mt-0.5">{error}</span>}
+    </div>
   );
 }
