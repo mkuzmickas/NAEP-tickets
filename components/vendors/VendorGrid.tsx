@@ -157,29 +157,31 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
         </span>
       </div>
 
-      {/* Committed */}
-      <div className="mb-5">
-        <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
-          Total Committed
+      {/* Two-column money read */}
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
+            Total PO Value
+          </div>
+          <div className="text-[22px] font-semibold tabular tracking-tight leading-tight mt-1 text-[var(--text)]">
+            {formatMoney(vendor.total_committed)}
+          </div>
         </div>
-        <div className="text-[26px] font-semibold tabular tracking-tight leading-tight mt-1 text-[var(--text)]">
-          {formatMoney(vendor.total_committed)}
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
+            Incurred to Date
+          </div>
+          <div className="text-[22px] font-semibold tabular tracking-tight leading-tight mt-1 text-[var(--text)]">
+            {formatMoney(vendor.total_lem)}
+          </div>
+          <div className="text-[11px] tabular text-[var(--text-muted)] mt-0.5">
+            {pctUsed.toFixed(1)}% of committed
+          </div>
         </div>
       </div>
 
-      {/* LEM + progress */}
+      {/* Progress bar */}
       <div className="mb-5">
-        <div className="flex items-baseline justify-between text-[11px] mb-1.5">
-          <span className="text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-            LEM-to-Date
-          </span>
-          <span className="tabular font-medium text-[var(--text)]">
-            {formatMoney(vendor.total_lem)}{' '}
-            <span className="text-[var(--text-muted)]">
-              · {pctUsed.toFixed(1)}%
-            </span>
-          </span>
-        </div>
         <div className="flex h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
           <div
             className={`h-full transition-all ${barTone}`}
