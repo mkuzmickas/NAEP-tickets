@@ -5,8 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Table2,
-  Grid3x3,
-  ScrollText,
+  Building2,
   Upload,
   Ship,
   CalendarRange,
@@ -24,9 +23,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Cost Control',
     items: [
+      { label: 'Vendors', href: '/vendors', icon: Building2 },
       { label: 'Logged Tickets', href: '/tickets', icon: Table2 },
-      { label: 'Ticket Map', href: '/ticket-map', icon: Grid3x3 },
-      { label: 'Purchase Orders', href: '/admin/pos', icon: ScrollText },
     ],
   },
   {
