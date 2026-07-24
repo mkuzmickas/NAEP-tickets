@@ -1,8 +1,10 @@
-import Link from 'next/link';
-import { getActivePoSummary, computeTotals } from '@/lib/dashboard';
+import {
+  getActivePoSummary,
+  computeTotals,
+  getCashFlow,
+} from '@/lib/dashboard';
 import { KpiCards } from '@/components/dashboard/KpiCards';
-import { ActivePoTable } from '@/components/dashboard/ActivePoTable';
-import { ReadingLegend } from '@/components/dashboard/ReadingLegend';
+import { CashFlowChart } from '@/components/dashboard/CashFlowChart';
 import { DropZone } from '@/components/dashboard/DropZone';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader } from '@/components/ui/Primitives';
@@ -10,7 +12,10 @@ import { PageHeader } from '@/components/ui/Primitives';
 export const revalidate = 0;
 
 export default async function DashboardPage() {
-  const rows = await getActivePoSummary();
+  const [rows, cashFlow] = await Promise.all([
+    getActivePoSummary(),
+    getCashFlow(),
+  ]);
   const totals = computeTotals(rows);
 
   return (
@@ -18,22 +23,15 @@ export default async function DashboardPage() {
       <div className="space-y-6">
         <PageHeader
           title="Dashboard"
-          subtitle="Snapshot of every active PO on the Aitken Creek Expansion — LEM burn, remaining commit, and vendor reconciliation gap."
-          action={
-            <Link
-              href="/tickets"
-              className="rounded-md bg-[var(--text)] text-[var(--surface)] px-4 py-2 text-sm font-semibold hover:opacity-90"
-            >
-              View all tickets →
-            </Link>
-          }
+          subtitle="Program-level snapshot — total committed, LEM burn to date, and cash-flow trajectory against the $35M ceiling through project close."
         />
 
         <KpiCards totals={totals} />
 
-        <ActivePoTable rows={rows} />
-
-        <ReadingLegend />
+        <CashFlowChart
+          points={cashFlow}
+          totalCommitted={totals.totalCommitted}
+        />
 
         <DropZone />
       </div>

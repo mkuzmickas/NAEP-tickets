@@ -55,6 +55,24 @@ export async function getActivePoSummary(): Promise<ActivePoSummary[]> {
   }));
 }
 
+export type CashFlowPoint = { date: string; value: number };
+
+type RawCashFlow = { ticket_date: string; face_value: string | number };
+
+export async function getCashFlow(): Promise<CashFlowPoint[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('tickets')
+    .select('ticket_date, face_value')
+    .neq('status', 'rejected')
+    .order('ticket_date', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as RawCashFlow[]).map((r) => ({
+    date: r.ticket_date,
+    value: Number(r.face_value),
+  }));
+}
+
 export type DashboardTotals = {
   totalLem: number;
   totalCommitted: number;
