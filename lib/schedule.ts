@@ -1,5 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
-import type { SchedulePackage, ScheduleWalkdown } from '@/types/schedule';
+import type {
+  SchedulePackage,
+  ScheduleWalkdown,
+  ScheduleEvent,
+  ScheduleEventKind,
+} from '@/types/schedule';
 
 type RawPkg = Omit<
   SchedulePackage,
@@ -72,5 +77,34 @@ export async function getAllWalkdowns(): Promise<ScheduleWalkdown[]> {
     event_date: r.event_date,
     level: r.level as 30 | 60 | 90,
     name: r.name,
+  }));
+}
+
+type RawEvent = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  name: string;
+  kind: string;
+};
+
+export async function getAllEvents(): Promise<ScheduleEvent[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('schedule_events')
+    .select('id, start_date, end_date, name, kind')
+    .order('start_date', { ascending: true });
+  if (error) {
+    // Table may not exist yet (migration not run) — return empty rather than 500
+    if (error.code === '42P01') return [];
+    console.error('getAllEvents failed:', error);
+    throw new Error(`Failed to fetch schedule events: ${error.message}`);
+  }
+  return (data as RawEvent[]).map((r) => ({
+    id: r.id,
+    start_date: r.start_date,
+    end_date: r.end_date,
+    name: r.name,
+    kind: r.kind as ScheduleEventKind,
   }));
 }

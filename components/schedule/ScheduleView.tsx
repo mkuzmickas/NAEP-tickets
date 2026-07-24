@@ -1,7 +1,12 @@
 'use client';
 
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { SchedulePackage, ScheduleWalkdown } from '@/types/schedule';
+import type {
+  SchedulePackage,
+  ScheduleWalkdown,
+  ScheduleEvent,
+  ScheduleEventKind,
+} from '@/types/schedule';
 
 type SearchCtx = { term: string; currentMatchId: string | null };
 const SearchContext = createContext<SearchCtx>({ term: '', currentMatchId: null });
@@ -78,6 +83,39 @@ type WalkdownModalState = {
   name: string;
 };
 
+type EventModalState = {
+  mode: 'create' | 'edit';
+  id?: string;
+  start_date: string;
+  end_date: string;
+  name: string;
+  kind: ScheduleEventKind;
+};
+
+const EVENT_KIND_STYLES: Record<
+  ScheduleEventKind,
+  { bar: string; text: string; badge: string; label: string }
+> = {
+  blackout: {
+    bar: 'bg-red-500',
+    text: 'text-red-900',
+    badge: 'bg-red-100 border-red-300',
+    label: 'Blackout',
+  },
+  milestone: {
+    bar: 'bg-amber-500',
+    text: 'text-amber-900',
+    badge: 'bg-amber-100 border-amber-300',
+    label: 'Milestone',
+  },
+  note: {
+    bar: 'bg-blue-500',
+    text: 'text-blue-900',
+    badge: 'bg-blue-100 border-blue-300',
+    label: 'Note',
+  },
+};
+
 const WD_STYLES: Record<WalkdownLevel, { bg: string; text: string; border: string; solid: string }> = {
   30: { bg: 'bg-green-100',  text: 'text-green-900',  border: 'border-green-300',  solid: 'bg-green-600' },
   60: { bg: 'bg-yellow-100', text: 'text-yellow-900', border: 'border-yellow-300', solid: 'bg-yellow-500' },
@@ -87,12 +125,16 @@ const WD_STYLES: Record<WalkdownLevel, { bg: string; text: string; border: strin
 export function ScheduleView({
   initialPackages,
   initialWalkdowns,
+  initialEvents = [],
 }: {
   initialPackages: SchedulePackage[];
   initialWalkdowns: ScheduleWalkdown[];
+  initialEvents?: ScheduleEvent[];
 }) {
   const [packages, setPackages] = useState<SchedulePackage[]>(initialPackages);
   const [walkdowns, setWalkdowns] = useState<ScheduleWalkdown[]>(initialWalkdowns);
+  const [events, setEvents] = useState<ScheduleEvent[]>(initialEvents);
+  const [eventModal, setEventModal] = useState<EventModalState | null>(null);
   const [toast, setToast] = useState<string>('');
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragGroup, setDragGroup] = useState<string | null>(null);
@@ -236,6 +278,7 @@ export function ScheduleView({
 
   useEffect(() => setPackages(initialPackages), [initialPackages]);
   useEffect(() => setWalkdowns(initialWalkdowns), [initialWalkdowns]);
+  useEffect(() => setEvents(initialEvents), [initialEvents]);
 
   const monthRange = useMemo(() => {
     const dates = packages.map((p) => p.planned_ship_date).filter((d): d is string => !!d).sort();
@@ -396,6 +439,128 @@ export function ScheduleView({
     });
     return m;
   }, [walkdowns]);
+
+  const eventsByDate = useMemo(() => {
+    const m = new Map<string, { event: ScheduleEvent; isStart: boolean; isEnd: boolean }[]>();
+    for (const e of events) {
+      const start = e.start_date;
+      const end = e.end_date;
+      const d = new Date(start + 'T00:00:00');
+      const stop = new Date(end + 'T00:00:00');
+      while (d <= stop) {
+        const iso = d.toISOString().slice(0, 10);
+        const arr = m.get(iso) || [];
+        arr.push({
+          event: e,
+          isStart: iso === start,
+          isEnd: iso === end,
+        });
+        m.set(iso, arr);
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    return m;
+  }, [events]);
+
+  async function saveEvent(state: EventModalState) {
+    const trimmedName = state.name.trim();
+    if (!trimmedName) {
+      showToast('Event name is required.');
+      return;
+    }
+    if (state.end_date < state.start_date) {
+      showToast('End date cannot be before start date.');
+      return;
+    }
+    if (state.mode === 'create') {
+      const tempId = `tmp-evt-${Date.now()}`;
+      const optimistic: ScheduleEvent = {
+        id: tempId,
+        start_date: state.start_date,
+        end_date: state.end_date,
+        name: trimmedName,
+        kind: state.kind,
+      };
+      setEvents((prev) => [...prev, optimistic]);
+      setEventModal(null);
+      try {
+        const res = await fetch('/api/schedule/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_date: state.start_date,
+            end_date: state.end_date,
+            name: trimmedName,
+            kind: state.kind,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Save failed (${res.status})`);
+        }
+        const { event } = await res.json();
+        setEvents((prev) => prev.map((e) => (e.id === tempId ? event : e)));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        showToast(`Event save failed: ${msg}`);
+        setEvents((prev) => prev.filter((e) => e.id !== tempId));
+      }
+    } else if (state.id) {
+      const prevList = events;
+      const editId = state.id;
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === editId
+            ? {
+                ...e,
+                start_date: state.start_date,
+                end_date: state.end_date,
+                name: trimmedName,
+                kind: state.kind,
+              }
+            : e
+        )
+      );
+      setEventModal(null);
+      try {
+        const res = await fetch(`/api/schedule/events/${editId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_date: state.start_date,
+            end_date: state.end_date,
+            name: trimmedName,
+            kind: state.kind,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Save failed (${res.status})`);
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        showToast(`Event save failed: ${msg}`);
+        setEvents(prevList);
+      }
+    }
+  }
+
+  async function deleteEvent(id: string) {
+    const prevList = events;
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+    setEventModal(null);
+    try {
+      const res = await fetch(`/api/schedule/events/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Delete failed (${res.status})`);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(`Event delete failed: ${msg}`);
+      setEvents(prevList);
+    }
+  }
 
   async function saveWalkdown(state: WalkdownModalState) {
     const trimmedName = state.name.trim();
@@ -772,6 +937,21 @@ export function ScheduleView({
               + Add package
             </button>
             <button
+              onClick={() =>
+                setEventModal({
+                  mode: 'create',
+                  start_date: new Date().toISOString().slice(0, 10),
+                  end_date: new Date().toISOString().slice(0, 10),
+                  name: '',
+                  kind: 'blackout',
+                })
+              }
+              title="Block a range of days (flare stack install, outage, etc.)"
+              className="text-xs px-3 py-1.5 border border-red-600 rounded bg-white text-red-700 hover:bg-red-600 hover:text-white font-semibold"
+            >
+              + Event
+            </button>
+            <button
               onClick={openPrintModal}
               title="Print calendar to PDF (one month per landscape page)"
               className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]"
@@ -841,6 +1021,17 @@ export function ScheduleView({
                           dayNum={d.getDate()}
                           units={units}
                           walkdowns={dayWalkdowns}
+                          events={eventsByDate.get(iso) || []}
+                          onEventClick={(evt) =>
+                            setEventModal({
+                              mode: 'edit',
+                              id: evt.id,
+                              start_date: evt.start_date,
+                              end_date: evt.end_date,
+                              name: evt.name,
+                              kind: evt.kind,
+                            })
+                          }
                           showPackages={showPackages}
                           showWalkdowns={showWalkdowns}
                           floorForDrag={() => {
@@ -899,6 +1090,16 @@ export function ScheduleView({
           onCancel={() => setWalkdownModal(null)}
           onSave={() => saveWalkdown(walkdownModal)}
           onDelete={walkdownModal.mode === 'edit' && walkdownModal.id ? () => deleteWalkdown(walkdownModal.id!) : undefined}
+        />
+      )}
+
+      {eventModal && (
+        <EventModal
+          state={eventModal}
+          onChange={setEventModal}
+          onCancel={() => setEventModal(null)}
+          onSave={() => saveEvent(eventModal)}
+          onDelete={eventModal.mode === 'edit' && eventModal.id ? () => deleteEvent(eventModal.id!) : undefined}
         />
       )}
 
@@ -1256,6 +1457,115 @@ function WalkdownChip({ wd, onClick }: { wd: ScheduleWalkdown; onClick: () => vo
   );
 }
 
+function EventModal({
+  state, onChange, onCancel, onSave, onDelete,
+}: {
+  state: EventModalState;
+  onChange: (next: EventModalState) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <div
+      className="schedule-print-modal fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-black/10">
+          <h3 className="text-sm font-semibold">
+            {state.mode === 'create' ? 'Add event' : 'Edit event'}
+          </h3>
+          <div className="text-[11px] text-enbridge-black/55 mt-0.5">
+            Block a date range on the calendar (blackout, milestone, or note).
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-[10px] font-semibold text-enbridge-black/70 uppercase tracking-wide mb-1.5">Kind</label>
+            <div className="flex gap-1.5">
+              {(['blackout', 'milestone', 'note'] as ScheduleEventKind[]).map((k) => {
+                const s = EVENT_KIND_STYLES[k];
+                const active = state.kind === k;
+                return (
+                  <button
+                    key={k}
+                    onClick={() => onChange({ ...state, kind: k })}
+                    className={`flex-1 text-xs rounded border py-2 font-semibold transition-colors ${
+                      active
+                        ? `${s.badge} ${s.text} ring-2 ring-offset-1 ring-black/20`
+                        : 'bg-white border-black/15 text-enbridge-black/50 hover:bg-black/[0.03]'
+                    }`}
+                  >
+                    <span className={`inline-block w-2 h-2 rounded-full ${s.bar} mr-1 align-middle`} />
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-semibold text-enbridge-black/70 uppercase tracking-wide mb-1">Start date</label>
+              <input
+                type="date"
+                value={state.start_date}
+                onChange={(e) => {
+                  const next = { ...state, start_date: e.target.value };
+                  if (next.end_date < next.start_date) next.end_date = next.start_date;
+                  onChange(next);
+                }}
+                className="w-full rounded border border-black/20 px-2 py-1.5 text-sm focus:outline-none focus:border-enbridge-black"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-enbridge-black/70 uppercase tracking-wide mb-1">End date</label>
+              <input
+                type="date"
+                value={state.end_date}
+                min={state.start_date}
+                onChange={(e) => onChange({ ...state, end_date: e.target.value })}
+                className="w-full rounded border border-black/20 px-2 py-1.5 text-sm focus:outline-none focus:border-enbridge-black"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-enbridge-black/70 uppercase tracking-wide mb-1">Name</label>
+            <input
+              type="text"
+              autoFocus={state.mode === 'create'}
+              value={state.name}
+              onChange={(e) => onChange({ ...state, name: e.target.value })}
+              placeholder="e.g. Flare Stack Install — no pickups"
+              className="w-full rounded border border-black/20 px-3 py-2 text-sm focus:outline-none focus:border-enbridge-black"
+              onKeyDown={(e) => { if (e.key === 'Enter' && state.name.trim()) onSave(); }}
+            />
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-black/10 flex items-center justify-between gap-2">
+          {onDelete ? (
+            <button onClick={onDelete} className="text-xs text-red-700 hover:text-red-900 underline">
+              Delete
+            </button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button onClick={onCancel} className="px-3 py-1.5 text-xs rounded border border-black/15 hover:bg-enbridge-paper">
+              Cancel
+            </button>
+            <button
+              onClick={onSave}
+              disabled={!state.name.trim()}
+              className="px-3 py-1.5 text-xs rounded bg-enbridge-black text-white hover:bg-enbridge-black/90 disabled:opacity-50 font-semibold"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WalkdownModal({
   state, onChange, onCancel, onSave, onDelete,
 }: {
@@ -1438,7 +1748,7 @@ function GroupChip({
 }
 
 function Cell({
-  dateISO, dayNum, units, walkdowns, showPackages, showWalkdowns, floorForDrag,
+  dateISO, dayNum, units, walkdowns, events, onEventClick, showPackages, showWalkdowns, floorForDrag,
   onDropItem, onDropGroup, onChipDragStart, onGroupDragStart, onDragEnd,
   onCreateWalkdown, onEditWalkdown,
 }: {
@@ -1446,6 +1756,8 @@ function Cell({
   dayNum: number;
   units: Unit[];
   walkdowns: ScheduleWalkdown[];
+  events: { event: ScheduleEvent; isStart: boolean; isEnd: boolean }[];
+  onEventClick: (event: ScheduleEvent) => void;
   showPackages: boolean;
   showWalkdowns: boolean;
   floorForDrag: () => string | null;
@@ -1461,6 +1773,7 @@ function Cell({
   const packageCount = showPackages ? units.length : 0;
   const walkdownCount = showWalkdowns ? walkdowns.length : 0;
   const badgeCount = packageCount + walkdownCount;
+  const blackoutActive = events.some((e) => e.event.kind === 'blackout');
   return (
     <div
       onDragOver={(e) => {
@@ -1476,11 +1789,32 @@ function Cell({
         if (data.startsWith('grp:')) onDropGroup(data.slice(4), dateISO);
         else onDropItem(data.replace(/^it:/, ''), dateISO);
       }}
-      className={`schedule-cell bg-white border rounded-lg p-1.5 flex flex-col min-h-[116px] transition-colors
+      className={`schedule-cell bg-white border rounded-lg p-1.5 flex flex-col min-h-[116px] transition-colors overflow-hidden relative
         ${drag === 'invalid' ? 'bg-[#fdeceb] border-[#c0392b] border-dashed' : ''}
         ${drag === 'valid' ? 'bg-[#eef6ee] border-[#3f9142] border-dashed' : 'border-black/10'}
+        ${blackoutActive && drag === 'idle' ? 'bg-red-50/40' : ''}
       `}
     >
+      {events.length > 0 && (
+        <div className="flex flex-col gap-0.5 mb-1 -mx-1.5 -mt-1.5">
+          {events.map(({ event: evt, isStart, isEnd }) => {
+            const s = EVENT_KIND_STYLES[evt.kind];
+            return (
+              <button
+                key={evt.id}
+                onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
+                title={`${s.label}: ${evt.name} · ${evt.start_date} → ${evt.end_date}`}
+                className={`${s.bar} text-white text-[9px] font-semibold uppercase tracking-wider px-1.5 leading-[14px] hover:brightness-95 text-left truncate
+                  ${isStart ? 'rounded-tl-md' : ''}
+                  ${isEnd ? 'rounded-tr-md' : ''}
+                `}
+              >
+                {isStart ? evt.name : (isEnd ? '›' : '…')}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="daynum text-[11px] text-enbridge-black/55 font-semibold flex justify-between px-1 pt-0.5 pb-1">
         <span>{dayNum}</span>
         {badgeCount > 0 && <span className="text-[10px]">{badgeCount}</span>}

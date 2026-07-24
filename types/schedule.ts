@@ -24,3 +24,13 @@ export type ScheduleWalkdown = {
   level: 30 | 60 | 90;
   name: string;
 };
+
+export type ScheduleEventKind = 'blackout' | 'milestone' | 'note';
+
+export type ScheduleEvent = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  name: string;
+  kind: ScheduleEventKind;
+};
