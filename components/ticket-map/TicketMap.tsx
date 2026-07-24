@@ -3,6 +3,13 @@
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/ui/PageContainer';
+import {
+  Card,
+  CardHeader,
+  EmptyState,
+  PageHeader,
+  StatTile,
+} from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
 import type { TicketMapPo, TicketMapTicket } from '@/lib/ticketMap';
 
@@ -77,19 +84,22 @@ export function TicketMap({
   return (
     <PageContainer>
       <div className="space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Ticket Map</h1>
-          <p className="text-sm text-enbridge-black/60">
-            Every field ticket, coloured by approval status.{' '}
-            <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm bg-green-500" /> Invoiced
-            </span>{' '}
-            &middot;{' '}
-            <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm bg-red-500" /> Pending — at risk
-            </span>
-          </p>
-        </header>
+        <PageHeader
+          title="Ticket Map"
+          subtitle={
+            <>
+              Every field ticket, coloured by Enbridge approval status.{' '}
+              <span className="inline-flex items-center gap-1 ml-1">
+                <span className="w-2 h-2 rounded-sm bg-green-500" /> Invoiced
+              </span>{' '}
+              &middot;{' '}
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm bg-red-500" /> Pending — at
+                risk
+              </span>
+            </>
+          }
+        />
 
         <div className="bg-white rounded-lg border border-black/10 p-4">
           <div className="text-[10px] uppercase tracking-widest text-enbridge-black/55 font-semibold mb-2">
@@ -140,37 +150,40 @@ export function TicketMap({
         {selectedVendor && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <KpiCard
+              <StatTile
                 label="Tickets Issued"
                 value={String(totals.total)}
                 sub={`across ${vendorPos.length} PO${vendorPos.length === 1 ? '' : 's'} · ${formatMoney(totals.totalValue)}`}
-                accent="black"
               />
-              <KpiCard
+              <StatTile
                 label="Approved by Enbridge"
                 value={String(totals.approved)}
                 sub={`${totals.pctApproved}% approved & billable`}
-                accent="green"
+                tone="under"
               />
-              <KpiCard
+              <StatTile
                 label="Not Yet Approved"
                 value={String(totals.pending)}
                 sub="pending / awaiting sign-off"
-                accent="amber"
+                tone="warn"
               />
-              <KpiCard
+              <StatTile
                 label="Value at Risk"
                 value={formatMoney(totals.valueAtRisk)}
                 sub="not yet billable"
-                accent="red"
+                tone="over"
+                emphasis
               />
             </div>
 
             <div className="space-y-4">
               {vendorPos.length === 0 ? (
-                <div className="bg-white rounded-lg border border-black/10 p-8 text-center text-enbridge-black/55 text-sm">
-                  No POs on file for this vendor.
-                </div>
+                <Card>
+                  <EmptyState
+                    title="No POs on file for this vendor."
+                    hint="Add one from the Purchase Orders page and it will appear here."
+                  />
+                </Card>
               ) : (
                 vendorPos.map((po) => {
                   const poTickets = ticketsByPo.get(po.id) ?? [];
@@ -204,46 +217,15 @@ export function TicketMap({
         )}
 
         {!selectedVendor && vendorList.length > 0 && (
-          <div className="bg-white rounded-lg border border-black/10 p-8 text-center text-enbridge-black/55 text-sm">
-            Pick a vendor above to see every field ticket grouped by PO.
-          </div>
+          <Card>
+            <EmptyState
+              title="Pick a vendor above."
+              hint="Every field ticket for that vendor will appear grouped by PO."
+            />
+          </Card>
         )}
       </div>
     </PageContainer>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  accent: 'black' | 'green' | 'amber' | 'red';
-}) {
-  const valueCls =
-    accent === 'green'
-      ? 'text-green-700'
-      : accent === 'amber'
-        ? 'text-amber-700'
-        : accent === 'red'
-          ? 'text-red-700'
-          : 'text-enbridge-black';
-  return (
-    <div className="bg-white rounded-lg border border-black/10 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-enbridge-black/55 font-semibold">
-        {label}
-      </div>
-      <div className={`text-3xl font-semibold tabular-nums mt-1 ${valueCls}`}>
-        {value}
-      </div>
-      <div className="text-[11px] text-enbridge-black/55 mt-1 leading-tight">
-        {sub}
-      </div>
-    </div>
   );
 }
 
@@ -264,24 +246,26 @@ function PoCard({
 }) {
   const router = useRouter();
   return (
-    <div className="bg-white rounded-lg border border-black/10 overflow-hidden">
-      <div className="px-5 py-3 border-b border-black/10 flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0">
-          <div className="font-mono text-sm font-semibold">{po.po_number}</div>
-          <div className="text-xs text-enbridge-black/60 mt-0.5 line-clamp-1">
+    <Card>
+      <CardHeader
+        title={po.po_number}
+        subtitle={
+          <span className="line-clamp-1">
             {po.scope ?? 'No description'}
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-xs text-enbridge-black/60 tabular-nums">
-            <strong className="text-enbridge-black">{poTotal}</strong> ticket
-            {poTotal === 1 ? '' : 's'} · {formatMoney(poValue)}
-          </div>
-          <div className="text-[10px] text-enbridge-black/55 tabular-nums mt-0.5">
-            Committed {formatMoney(po.committed_amount)}
-          </div>
-        </div>
-      </div>
+          </span>
+        }
+        right={
+          <>
+            <div className="text-xs text-enbridge-black/60 tabular-nums">
+              <strong className="text-enbridge-black">{poTotal}</strong> ticket
+              {poTotal === 1 ? '' : 's'} · {formatMoney(poValue)}
+            </div>
+            <div className="text-[10px] text-enbridge-black/55 tabular-nums mt-0.5">
+              Committed {formatMoney(po.committed_amount)}
+            </div>
+          </>
+        }
+      />
 
       {poTotal > 0 && pctApp !== null && (
         <div className="px-5 py-2 border-b border-black/5">
@@ -320,7 +304,7 @@ function PoCard({
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
