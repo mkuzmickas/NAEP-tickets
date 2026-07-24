@@ -7,6 +7,7 @@ import type {
   ScheduleEvent,
   ScheduleEventKind,
 } from '@/types/schedule';
+import { buildScheduleHtml } from '@/lib/scheduleHtmlExport';
 
 type SearchCtx = { term: string; currentMatchId: string | null };
 const SearchContext = createContext<SearchCtx>({ term: '', currentMatchId: null });
@@ -705,6 +706,25 @@ export function ScheduleView({
     setTimeout(() => window.print(), 100);
   }
 
+  function exportHtml() {
+    const doc = buildScheduleHtml({
+      packages,
+      walkdowns,
+      events,
+      monthRange,
+    });
+    const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const today = new Date().toISOString().slice(0, 10);
+    link.download = `ACGS-Ship-Schedule-${today}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <SearchContext.Provider value={{ term: searchTerm, currentMatchId }}>
     <div className="schedule-root flex h-full w-full text-[13px] leading-snug">
@@ -842,7 +862,7 @@ export function ScheduleView({
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="schedule-main-col flex-1 flex flex-col overflow-hidden">
         <div className="schedule-toolbar bg-white border-b border-black/15 px-5 py-3 flex items-center gap-4 flex-wrap">
           <div className="h-6 w-1 bg-[#D04E00] rounded-sm" />
           <div className="flex flex-col">
@@ -957,6 +977,13 @@ export function ScheduleView({
               className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]"
             >
               🖨 Print…
+            </button>
+            <button
+              onClick={exportHtml}
+              title="Export as a self-contained HTML file you can email"
+              className="text-xs px-3 py-1.5 border border-black/15 rounded bg-white hover:bg-black/[0.03]"
+            >
+              ⬇ HTML
             </button>
           </div>
         </div>

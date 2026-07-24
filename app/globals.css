@@ -81,25 +81,22 @@
     display: none !important;
   }
 
-  /* Force document flow through the layout so pages break naturally */
-  main {
-    display: block !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-  .schedule-root {
+  /* Force document flow through EVERY flex/overflow ancestor. Chrome
+     refuses to honour break-after: page on descendants of a flex
+     container, so any ancestor left as flex silently collapses the
+     whole calendar onto one page. */
+  main,
+  .authed-body,
+  .schedule-root,
+  .schedule-main-col,
+  .schedule-cal-wrap,
+  .schedule-months {
     display: block !important;
     height: auto !important;
     overflow: visible !important;
   }
   .schedule-cal-wrap {
-    display: block !important;
-    height: auto !important;
-    overflow: visible !important;
     padding: 0 !important;
-  }
-  .schedule-months {
-    display: block !important;
   }
 
   /* One month per page */
