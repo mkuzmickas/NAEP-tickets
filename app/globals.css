@@ -11,10 +11,11 @@
  */
 :root {
   --surface: #ffffff;
-  --surface-2: #f7f5ee;   /* enbridge-paper */
-  --border: rgba(0, 0, 0, 0.10);
-  --text: #353535;         /* enbridge-black */
-  --text-muted: rgba(53, 53, 53, 0.60);
+  --surface-2: #f3f4f6;   /* cool gray page bg, matches sureline reference */
+  --page-bg:   #f3f4f6;
+  --border:    #e5e7eb;
+  --text:       #131417;   /* near-black for real contrast */
+  --text-muted: #5b616b;
 
   --brand-orange: #d04e00; /* enbridge primary accent */
   --brand-yellow: #ffb81c;
@@ -32,10 +33,13 @@
 
 @layer base {
   html {
-    @apply bg-enbridge-paper text-enbridge-black;
+    background: var(--page-bg);
+    color: var(--text);
   }
   body {
     @apply min-h-screen antialiased;
+    background: var(--page-bg);
+    color: var(--text);
   }
 }
 

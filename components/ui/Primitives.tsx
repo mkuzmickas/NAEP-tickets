@@ -161,3 +161,55 @@ export function EmptyState({
 export function TableWrap({ children }: { children: ReactNode }) {
   return <div className="w-full overflow-x-auto">{children}</div>;
 }
+
+/** Uppercase muted column headers matching the Sureline table pattern. */
+export function Th({
+  children,
+  right,
+  className,
+}: {
+  children: ReactNode;
+  right?: boolean;
+  className?: string;
+}) {
+  return (
+    <th
+      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] ${
+        right ? 'text-right' : 'text-left'
+      } ${className ?? ''}`}
+    >
+      {children}
+    </th>
+  );
+}
+
+/** Standard body cell with vertical-align top and subtle padding. */
+export function Td({
+  children,
+  right,
+  mono,
+  muted,
+  className,
+}: {
+  children: ReactNode;
+  right?: boolean;
+  mono?: boolean;
+  muted?: boolean;
+  className?: string;
+}) {
+  return (
+    <td
+      className={[
+        'px-3 py-2.5 align-top',
+        right ? 'text-right tabular' : '',
+        mono ? 'font-mono text-xs tabular' : 'text-sm',
+        muted ? 'text-[var(--text-muted)]' : '',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {children}
+    </td>
+  );
+}

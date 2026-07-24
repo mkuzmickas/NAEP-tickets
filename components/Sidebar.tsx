@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Table2,
@@ -12,7 +12,6 @@ import {
   CalendarRange,
   type LucideIcon,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 
 type NavItem = { label: string; href: string; icon: LucideIcon };
 type NavGroup = { label: string; items: NavItem[] };
@@ -48,16 +47,8 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + '/');
 }
 
-export function Sidebar({ userEmail }: { userEmail: string }) {
+export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-
-  async function signOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
-  }
 
   return (
     <aside className="w-60 shrink-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col overflow-hidden print:hidden">
@@ -68,10 +59,10 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
         className="block px-5 py-4 border-b border-[var(--border)] hover:bg-[var(--surface-2)]"
       >
         <div className="text-[13px] font-semibold tracking-tight leading-tight text-[var(--text)]">
-          Aitken Creek Expansion
+          NAEP · Field Cost
         </div>
         <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">
-          Field Cost Tracker
+          Tracker
         </div>
       </Link>
 
@@ -104,19 +95,8 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
         ))}
       </nav>
 
-      <div className="border-t border-[var(--border)] px-5 py-3">
-        <div
-          className="text-[11px] font-medium truncate text-[var(--text)]"
-          title={userEmail}
-        >
-          {userEmail}
-        </div>
-        <button
-          onClick={signOut}
-          className="mt-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--over)] hover:underline"
-        >
-          Sign out
-        </button>
+      <div className="border-t border-[var(--border)] px-5 py-3 text-[10px] text-[var(--text-muted)]">
+        Aitken Creek Expansion
       </div>
     </aside>
   );

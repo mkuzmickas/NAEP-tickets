@@ -5,6 +5,7 @@ import { ActivePoTable } from '@/components/dashboard/ActivePoTable';
 import { ReadingLegend } from '@/components/dashboard/ReadingLegend';
 import { DropZone } from '@/components/dashboard/DropZone';
 import { PageContainer } from '@/components/ui/PageContainer';
+import { PageHeader } from '@/components/ui/Primitives';
 
 export const revalidate = 0;
 
@@ -15,27 +16,24 @@ export default async function DashboardPage() {
   return (
     <PageContainer>
       <div className="space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-enbridge-black/60">
-            Project 30006386 · Enbridge Gas Inc.
-          </p>
-        </header>
+        <PageHeader
+          title="Dashboard"
+          subtitle="Snapshot of every active PO on the Aitken Creek Expansion — LEM burn, remaining commit, and vendor reconciliation gap."
+          action={
+            <Link
+              href="/tickets"
+              className="rounded-md bg-[var(--text)] text-[var(--surface)] px-4 py-2 text-sm font-semibold hover:opacity-90"
+            >
+              View all tickets →
+            </Link>
+          }
+        />
 
         <KpiCards totals={totals} />
 
         <ActivePoTable rows={rows} />
 
         <ReadingLegend />
-
-        <div className="flex items-center justify-between gap-4 pt-2">
-          <Link
-            href="/tickets"
-            className="rounded bg-enbridge-black text-white px-4 py-2 text-sm font-medium hover:bg-enbridge-black/90"
-          >
-            View all logged tickets →
-          </Link>
-        </div>
 
         <DropZone />
       </div>

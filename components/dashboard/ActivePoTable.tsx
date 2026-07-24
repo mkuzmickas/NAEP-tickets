@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatMoney, formatPct } from '@/lib/money';
+import { Card, CardHeader, EmptyState } from '@/components/ui/Primitives';
 import type { ActivePoSummary } from '@/types/database';
 
 type SortKey =
@@ -95,43 +96,43 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
   const filtersActive = !!(search || vendorFilter !== 'all');
 
   return (
-    <div className="bg-white rounded-lg border border-black/10 overflow-hidden">
-      <div className="px-5 py-3 border-b border-black/10 space-y-3">
-        <div className="flex items-baseline justify-between gap-3 flex-wrap">
-          <h2 className="text-base font-semibold tracking-tight">
-            Purchase Orders
-          </h2>
-          <span className="text-xs text-enbridge-black/55 tabular-nums">
-            Showing <strong>{filtered.length}</strong> of {rows.length} · LEM
-            {' '}{formatMoney(filteredTotals.lem)} of{' '}
-            {formatMoney(filteredTotals.committed)} committed
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr,200px] gap-2">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search PO #, cost code, vendor, or description"
-            className="rounded border border-black/20 px-3 py-1.5 text-sm focus:outline-none focus:border-enbridge-black"
-          />
-          <select
-            value={vendorFilter}
-            onChange={(e) => setVendorFilter(e.target.value)}
-            className="rounded border border-black/20 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-enbridge-black"
-          >
-            <option value="all">All vendors</option>
-            {vendorOptions.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
+    <Card>
+      <CardHeader
+        title="Purchase Orders"
+        subtitle={
+          <>
+            Showing <span className="tabular font-medium text-[var(--text)]">{filtered.length}</span> of {rows.length} ·{' '}
+            <span className="tabular font-medium text-[var(--text)]">{formatMoney(filteredTotals.lem)}</span>
+            {' '}LEM of{' '}
+            <span className="tabular font-medium text-[var(--text)]">{formatMoney(filteredTotals.committed)}</span>
+            {' '}committed
+          </>
+        }
+      />
+      <div className="px-5 py-3 border-b border-[var(--border)] flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search PO #, cost code, vendor, or description"
+          className="flex-1 min-w-[240px] rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--text)]"
+        />
+        <select
+          value={vendorFilter}
+          onChange={(e) => setVendorFilter(e.target.value)}
+          className="w-[200px] rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--text)]"
+        >
+          <option value="all">All vendors</option>
+          {vendorOptions.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
         {filtersActive && (
           <button
             onClick={clearFilters}
-            className="text-xs text-enbridge-black/60 underline hover:text-enbridge-black"
+            className="text-xs text-[var(--text-muted)] underline hover:text-[var(--text)]"
           >
             Clear filters
           </button>
@@ -139,8 +140,8 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-enbridge-paper text-enbridge-black/70">
-            <tr>
+          <thead>
+            <tr className="border-b border-[var(--border)]">
               <SortableTh
                 active={sortKey === 'po_number'}
                 dir={sortDir}
@@ -227,11 +228,11 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                 onClick={() =>
                   router.push(`/tickets?po=${encodeURIComponent(r.po_number)}`)
                 }
-                className="border-t border-black/5 hover:bg-enbridge-paper/60 cursor-pointer"
+                className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)] cursor-pointer"
                 title={`Click to see all tickets for ${r.po_number}`}
               >
                 <Td mono>{r.po_number}</Td>
-                <Td mono>{r.project_cost_code ?? '—'}</Td>
+                <Td mono muted>{r.project_cost_code ?? '—'}</Td>
                 <Td>{r.vendor_display_name}</Td>
                 <VendorJobRefCell
                   poId={r.id}
@@ -239,7 +240,7 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
                   onSaved={() => router.refresh()}
                 />
                 <Td className="max-w-xs">
-                  <span className="text-enbridge-black/80 line-clamp-2">
+                  <span className="text-[var(--text)] line-clamp-2">
                     {r.scope ?? '—'}
                   </span>
                 </Td>
@@ -257,20 +258,26 @@ export function ActivePoTable({ rows }: { rows: ActivePoSummary[] }) {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td
-                  colSpan={11}
-                  className="px-4 py-8 text-center text-enbridge-black/55 text-sm"
-                >
-                  {rows.length === 0
-                    ? 'No POs on file yet. Add one in the POs admin page.'
-                    : 'No POs match the current filters.'}
+                <td colSpan={11} className="p-0">
+                  <EmptyState
+                    title={
+                      rows.length === 0
+                        ? 'No POs on file yet.'
+                        : 'No POs match the current filters.'
+                    }
+                    hint={
+                      rows.length === 0
+                        ? 'Add one from the Purchase Orders page.'
+                        : undefined
+                    }
+                  />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -283,7 +290,7 @@ function Th({
 }) {
   return (
     <th
-      className={`px-4 py-2 text-xs font-medium uppercase tracking-wide ${
+      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] ${
         right ? 'text-right' : 'text-left'
       }`}
     >
@@ -307,7 +314,7 @@ function SortableTh({
 }) {
   return (
     <th
-      className={`px-4 py-2 text-xs font-medium uppercase tracking-wide ${
+      className={`px-3 py-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] ${
         right ? 'text-right' : 'text-left'
       }`}
     >
@@ -328,19 +335,22 @@ function Td({
   children,
   right,
   mono,
+  muted,
   className,
 }: {
   children: React.ReactNode;
   right?: boolean;
   mono?: boolean;
+  muted?: boolean;
   className?: string;
 }) {
   return (
     <td
       className={[
-        'px-4 py-3 align-top',
-        right ? 'text-right tabular-nums' : '',
-        mono ? 'font-mono text-xs' : '',
+        'px-3 py-2.5 align-top',
+        right ? 'text-right tabular' : '',
+        mono ? 'font-mono text-xs tabular' : 'text-sm',
+        muted ? 'text-[var(--text-muted)]' : '',
         className ?? '',
       ]
         .filter(Boolean)
@@ -352,17 +362,16 @@ function Td({
 }
 
 function PctCell({ value }: { value: number }) {
-  let bg = '';
-  let text = 'text-enbridge-black/75';
+  let cls = 'text-[var(--text)]';
   if (value > 100) {
-    bg = 'bg-red-100';
-    text = 'text-red-900 font-semibold';
+    cls = 'text-[var(--over)] font-semibold';
   } else if (value > 80) {
-    bg = 'bg-amber-100';
-    text = 'text-amber-900 font-semibold';
+    cls = 'text-[var(--warn)] font-semibold';
+  } else if (value >= 0) {
+    cls = 'text-[var(--text-muted)]';
   }
   return (
-    <td className={`px-4 py-3 text-right tabular-nums ${bg} ${text}`}>
+    <td className={`px-3 py-2.5 text-right tabular ${cls}`}>
       {formatPct(value)}
     </td>
   );
@@ -370,22 +379,23 @@ function PctCell({ value }: { value: number }) {
 
 function GapCell({ value }: { value: number | null }) {
   if (value == null) {
-    return <td className="px-4 py-3 text-right text-enbridge-black/35 tabular-nums">—</td>;
+    return (
+      <td className="px-3 py-2.5 text-right text-[var(--text-muted)]/50 tabular">
+        —
+      </td>
+    );
   }
-  let bg = '';
-  let text = 'text-enbridge-black/75';
   const abs = Math.abs(value);
+  let cls = 'text-[var(--text-muted)]';
   if (abs < 0.5) {
-    text = 'text-green-800 font-medium';
+    cls = 'text-[var(--under)]';
   } else if (value > 0) {
-    bg = 'bg-red-100';
-    text = 'text-red-900 font-semibold';
+    cls = 'text-[var(--over)] font-semibold';
   } else {
-    bg = 'bg-amber-100';
-    text = 'text-amber-900 font-semibold';
+    cls = 'text-[var(--warn)] font-semibold';
   }
   return (
-    <td className={`px-4 py-3 text-right tabular-nums ${bg} ${text}`}>
+    <td className={`px-3 py-2.5 text-right tabular ${cls}`}>
       {formatMoney(value)}
     </td>
   );
