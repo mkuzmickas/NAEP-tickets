@@ -3,19 +3,20 @@ import type { ReactNode } from 'react';
 type Tone = 'neutral' | 'under' | 'over' | 'warn' | 'info';
 
 const TONE_TEXT: Record<Tone, string> = {
-  neutral: 'text-enbridge-black',
-  under: 'text-green-700',
-  over: 'text-red-700',
-  warn: 'text-amber-700',
-  info: 'text-blue-700',
+  neutral: 'text-[var(--text)]',
+  under: 'text-[var(--under)]',
+  over: 'text-[var(--over)]',
+  warn: 'text-[var(--warn)]',
+  info: 'text-[var(--info)]',
 };
 
-const TONE_SWATCH: Record<Tone, string> = {
-  neutral: 'bg-enbridge-black',
-  under: 'bg-green-500',
-  over: 'bg-red-500',
-  warn: 'bg-amber-500',
-  info: 'bg-blue-500',
+const BADGE_TONE: Record<Tone | 'brand', string> = {
+  neutral: 'bg-[var(--surface-2)] text-[var(--text-muted)]',
+  under: 'bg-[var(--under-bg)] text-[var(--under)]',
+  over: 'bg-[var(--over-bg)] text-[var(--over)]',
+  warn: 'bg-[var(--warn-bg)] text-[var(--warn)]',
+  info: 'bg-[var(--info-bg)] text-[var(--info)]',
+  brand: 'bg-[var(--brand-orange)] text-white',
 };
 
 export function PageHeader({
@@ -28,28 +29,29 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-enbridge-black">
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">
           {title}
         </h1>
         {subtitle && (
-          <p className="text-sm text-enbridge-black/60 mt-1 leading-snug">
+          <div className="mt-1 text-sm text-[var(--text-muted)]">
             {subtitle}
-          </p>
+          </div>
         )}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </header>
+      {action}
+    </div>
   );
 }
 
+/** A headline number. `tone` colours the value; the label always carries the meaning. */
 export function StatTile({
   label,
   value,
   sub,
   tone = 'neutral',
-  emphasis,
+  emphasis = false,
 }: {
   label: string;
   value: string;
@@ -59,23 +61,18 @@ export function StatTile({
 }) {
   return (
     <div
-      className={`rounded-lg border p-4 ${
-        emphasis
-          ? 'bg-white border-black/15 ring-1 ring-black/[0.03]'
-          : 'bg-white border-black/10'
+      className={`rounded-lg border bg-[var(--surface)] border-[var(--border)] p-5 ${
+        emphasis ? 'border-l-4 border-l-[var(--brand-orange)]' : ''
       }`}
     >
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-enbridge-black/55 font-semibold">
-        <span className={`w-1.5 h-1.5 rounded-full ${TONE_SWATCH[tone]}`} />
+      <div className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
         {label}
       </div>
-      <div
-        className={`text-3xl font-semibold tabular-nums mt-2 ${TONE_TEXT[tone]}`}
-      >
+      <div className={`tabular mt-2 text-2xl font-semibold ${TONE_TEXT[tone]}`}>
         {value}
       </div>
       {sub && (
-        <div className="text-[11px] text-enbridge-black/55 mt-1 leading-tight">
+        <div className="mt-1 text-xs text-[var(--text-muted)] leading-snug">
           {sub}
         </div>
       )}
@@ -86,13 +83,17 @@ export function StatTile({
 export function Card({
   children,
   className,
+  emphasis,
 }: {
   children: ReactNode;
   className?: string;
+  emphasis?: boolean;
 }) {
   return (
     <div
-      className={`bg-white rounded-lg border border-black/10 overflow-hidden ${className ?? ''}`}
+      className={`rounded-lg border bg-[var(--surface)] border-[var(--border)] overflow-hidden ${
+        emphasis ? 'border-l-4 border-l-[var(--brand-orange)]' : ''
+      } ${className ?? ''}`}
     >
       {children}
     </div>
@@ -102,26 +103,40 @@ export function Card({
 export function CardHeader({
   title,
   subtitle,
-  right,
+  action,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
-  right?: ReactNode;
+  action?: ReactNode;
 }) {
   return (
-    <div className="px-5 py-3 border-b border-black/10 flex items-start justify-between gap-4 flex-wrap">
+    <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
       <div className="min-w-0">
-        <div className="font-mono text-sm font-semibold text-enbridge-black">
+        <h2 className="text-sm font-semibold tracking-wide uppercase text-[var(--text)]">
           {title}
-        </div>
+        </h2>
         {subtitle && (
-          <div className="text-xs text-enbridge-black/60 mt-0.5">
-            {subtitle}
-          </div>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">{subtitle}</p>
         )}
       </div>
-      {right && <div className="text-right shrink-0">{right}</div>}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
+  );
+}
+
+export function Badge({
+  children,
+  tone = 'neutral',
+}: {
+  children: ReactNode;
+  tone?: Tone | 'brand';
+}) {
+  return (
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${BADGE_TONE[tone]}`}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -133,9 +148,16 @@ export function EmptyState({
   hint?: string;
 }) {
   return (
-    <div className="px-6 py-10 text-center text-enbridge-black/55 text-sm">
-      <div className="font-medium text-enbridge-black/70">{title}</div>
-      {hint && <div className="text-xs mt-1">{hint}</div>}
+    <div className="px-5 py-12 text-center">
+      <p className="text-sm font-medium text-[var(--text)]">{title}</p>
+      {hint && (
+        <p className="mt-1 text-sm text-[var(--text-muted)]">{hint}</p>
+      )}
     </div>
   );
+}
+
+/** Wide tables must scroll inside their own box, never the page body. */
+export function TableWrap({ children }: { children: ReactNode }) {
+  return <div className="w-full overflow-x-auto">{children}</div>;
 }

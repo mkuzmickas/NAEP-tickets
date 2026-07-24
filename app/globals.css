@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens — cost-control palette borrowed from the sureline-portal
+ * design system, keyed to Enbridge orange/navy/yellow as the brand accents.
+ *
+ *   under / over / warn / info drive every status tint in the app so a single
+ *   colour change here re-themes tiles, chips, badges, and cards in one step.
+ */
+:root {
+  --surface: #ffffff;
+  --surface-2: #f7f5ee;   /* enbridge-paper */
+  --border: rgba(0, 0, 0, 0.10);
+  --text: #353535;         /* enbridge-black */
+  --text-muted: rgba(53, 53, 53, 0.60);
+
+  --brand-orange: #d04e00; /* enbridge primary accent */
+  --brand-yellow: #ffb81c;
+  --brand-navy: #1f4e79;
+
+  --over:     #d8442f;
+  --over-bg:  #fdecea;
+  --under:    #1f8a4c;
+  --under-bg: #e8f5ed;
+  --warn:     #b8770a;
+  --warn-bg:  #fdf3e0;
+  --info:     #2563a8;
+  --info-bg:  #e9f1fb;
+}
+
 @layer base {
   html {
     @apply bg-enbridge-paper text-enbridge-black;
@@ -9,6 +37,12 @@
   body {
     @apply min-h-screen antialiased;
   }
+}
+
+/* Money and codes align on the decimal and never reflow between renders. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }
 
 /* ============================================================
