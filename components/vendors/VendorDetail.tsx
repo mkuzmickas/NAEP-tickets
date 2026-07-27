@@ -1,14 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Plus } from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader, StatTile, Card } from '@/components/ui/Primitives';
+import { AddPoDialog } from '@/components/vendors/AddPoDialog';
 import { formatMoney, formatPct } from '@/lib/money';
 import type { PoWithTickets, TicketBrief, VendorSummary } from '@/lib/vendors';
 
 export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
+  const [addPoOpen, setAddPoOpen] = useState(false);
   const pctUsed =
     vendor.total_committed > 0
       ? (vendor.total_lem / vendor.total_committed) * 100
@@ -38,8 +41,19 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
                 <span className="tabular">{vendor.ticket_count} ticket{vendor.ticket_count === 1 ? '' : 's'}</span>
               </>
             }
+            action={
+              <button
+                onClick={() => setAddPoOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-orange)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2.5} />
+                Add PO
+              </button>
+            }
           />
         </div>
+
+        {addPoOpen && <AddPoDialog onClose={() => setAddPoOpen(false)} />}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatTile

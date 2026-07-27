@@ -2,10 +2,17 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { CheckCircle2, XCircle, ArrowUpRight, Building2 } from 'lucide-react';
+import {
+  CheckCircle2,
+  XCircle,
+  ArrowUpRight,
+  Building2,
+  Plus,
+} from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
+import { AddPoDialog } from '@/components/vendors/AddPoDialog';
 import type { VendorSummary } from '@/lib/vendors';
 
 /* --------------------------------------------------------------------------
@@ -38,6 +45,7 @@ function initials(name: string): string {
 
 export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
   const [search, setSearch] = useState('');
+  const [addPoOpen, setAddPoOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -85,6 +93,15 @@ export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
               )}
             </>
           }
+          action={
+            <button
+              onClick={() => setAddPoOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-orange)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              Add PO
+            </button>
+          }
         />
 
         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
@@ -96,6 +113,8 @@ export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
             className="w-full bg-transparent text-sm placeholder:text-[var(--text-muted)] focus:outline-none"
           />
         </div>
+
+        {addPoOpen && <AddPoDialog onClose={() => setAddPoOpen(false)} />}
 
         {filtered.length === 0 ? (
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-12 text-center">

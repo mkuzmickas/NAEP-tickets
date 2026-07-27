@@ -24,9 +24,15 @@ type ParsedPo = {
   committed_amount: number;
 };
 
-export function AddPoForm() {
+export function AddPoForm({
+  hideToggle = false,
+  onSuccess,
+}: {
+  hideToggle?: boolean;
+  onSuccess?: () => void;
+} = {}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(hideToggle);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -159,8 +165,12 @@ export function AddPoForm() {
       const data = await res.json();
       setForm(EMPTY_FORM);
       setParsedFilename('');
-      setSuccessMsg(`Added PO ${data.po_number}. The list below has been refreshed.`);
+      setSuccessMsg(`Added PO ${data.po_number}.`);
       router.refresh();
+      if (onSuccess) {
+        // Short delay so the success message is visible before the caller closes the dialog
+        setTimeout(() => onSuccess(), 700);
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setErrorMsg(msg);
@@ -170,16 +180,25 @@ export function AddPoForm() {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-black/10">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full px-5 py-3 text-left flex items-baseline justify-between hover:bg-enbridge-paper rounded-t-lg"
-      >
-        <h2 className="text-base font-semibold tracking-tight">Add a new PO</h2>
-        <span className="text-xs text-enbridge-black/55">{open ? '▾ Hide' : '▸ Show'}</span>
-      </button>
+    <div className={hideToggle ? '' : 'bg-white rounded-lg border border-black/10'}>
+      {!hideToggle && (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="w-full px-5 py-3 text-left flex items-baseline justify-between hover:bg-enbridge-paper rounded-t-lg"
+        >
+          <h2 className="text-base font-semibold tracking-tight">Add a new PO</h2>
+          <span className="text-xs text-enbridge-black/55">{open ? '▾ Hide' : '▸ Show'}</span>
+        </button>
+      )}
       {open && (
-        <form onSubmit={handleSubmit} className="px-5 pb-5 space-y-4 border-t border-black/5">
+        <form
+          onSubmit={handleSubmit}
+          className={
+            hideToggle
+              ? 'space-y-4'
+              : 'px-5 pb-5 space-y-4 border-t border-black/5'
+          }
+        >
           <div className="pt-4">
             <div
               onDragOver={(e) => {
