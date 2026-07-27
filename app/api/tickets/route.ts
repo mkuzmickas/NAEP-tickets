@@ -119,7 +119,11 @@ export async function POST(req: Request) {
       face_value: parsed.face_value,
       computed_total: computed,
       reconciled: true,
-      status: 'pending',
+      // Uploaded PDFs are trusted as already client-approved — anything Mike
+      // drops in has been signed off before it reaches the portal. Landing at
+      // 'invoiced' straight away means chips are green by default; flip back
+      // to 'pending' from the vendor page if a ticket is contested later.
+      status: 'invoiced',
       markup_notes: parsed.markup_notes ?? null,
       created_by: user.id,
     })
