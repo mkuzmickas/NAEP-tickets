@@ -6,24 +6,71 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   AlertCircle,
 } from 'lucide-react';
 import { Card, CardHeader } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
-import {
-  computeFac,
-  forecastContribution,
-  type ForecastPo,
-} from '@/lib/forecast.shared';
+import { computeFac, type ForecastPo } from '@/lib/forecast.shared';
+
+// -----------------------------------------------------------------------------
+// Accent palette — same deterministic hash used on the Vendors grid so a
+// vendor's colour is the same everywhere they appear. Gives each vendor
+// row a small piece of visual identity so the page reads as a set of
+// vendor cards, not an anonymous grid.
+// -----------------------------------------------------------------------------
+const ACCENT_PALETTE = [
+  { fg: '#1F4E79', bg: '#e6eef6' },
+  { fg: '#0f766e', bg: '#e6f2f0' },
+  { fg: '#7c3aed', bg: '#efe9fe' },
+  { fg: '#a16207', bg: '#fbf1d9' },
+  { fg: '#be123c', bg: '#fce7ed' },
+  { fg: '#0369a1', bg: '#e0f0fa' },
+  { fg: '#65a30d', bg: '#eef7dd' },
+  { fg: '#c2410c', bg: '#fbe8dc' },
+];
+
+function accentFor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return ACCENT_PALETTE[h % ACCENT_PALETTE.length];
+}
+
+function initials(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
 
 type SortKey =
   | 'po_number'
-  | 'vendor_display_name'
   | 'committed'
   | 'lem'
   | 'percent_complete'
   | 'fac'
   | 'overrun';
+
+// -----------------------------------------------------------------------------
+// Per-PO derived numbers — one place, so the row cells + the vendor
+// rollup + the totals footer all agree. When there's no manual
+// percent_complete yet, everything falls back to the implied % that
+// makes FAC exactly equal to committed.
+// -----------------------------------------------------------------------------
+function derive(p: ForecastPo) {
+  const impliedPct =
+    p.committed > 0 && p.lem > 0
+      ? Math.min(100, (p.lem / p.committed) * 100)
+      : null;
+  const isImplied = p.percent_complete == null;
+  const displayFac = p.fac ?? (impliedPct != null ? p.committed : null);
+  const displayOverrun = p.overrun ?? (impliedPct != null ? 0 : null);
+  return { impliedPct, isImplied, displayFac, displayOverrun };
+}
+
+// -----------------------------------------------------------------------------
+// Top-level table
+// -----------------------------------------------------------------------------
 
 export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
   const [rows, setRows] = useState<ForecastPo[]>(initialRows);
@@ -32,8 +79,8 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
   const [showForecastedOnly, setShowForecastedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('committed');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [expandedVendors, setExpandedVendors] = useState<Set<string>>(new Set());
 
-  // Keep local state in sync if the server refetches with different data.
   useEffect(() => setRows(initialRows), [initialRows]);
 
   const vendorOptions = useMemo(
@@ -74,21 +121,52 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
     });
   }, [rows, search, vendorFilter, showForecastedOnly, sortKey, sortDir]);
 
+  // Vendors always alphabetical, POs inside each vendor follow the sort
+  // column. Feels natural to scan and matches how construction thinks
+  // about the world ("give me every Sureline PO").
+  const groups = useMemo(() => {
+    const byVendor = new Map<string, ForecastPo[]>();
+    for (const r of filtered) {
+      const arr = byVendor.get(r.vendor_display_name) ?? [];
+      arr.push(r);
+      byVendor.set(r.vendor_display_name, arr);
+    }
+    return Array.from(byVendor.entries()).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+  }, [filtered]);
+
   const totals = useMemo(() => {
     return filtered.reduce(
-      (acc, r) => ({
-        committed: acc.committed + r.committed,
-        lem: acc.lem + r.lem,
-        fac: acc.fac + forecastContribution(r),
-        overrun: acc.overrun + (r.overrun ?? 0),
-        forecastedCount: acc.forecastedCount + (r.fac == null ? 0 : 1),
-      }),
+      (acc, r) => {
+        const d = derive(r);
+        return {
+          committed: acc.committed + r.committed,
+          lem: acc.lem + r.lem,
+          fac: acc.fac + (d.displayFac ?? r.committed),
+          overrun: acc.overrun + (d.displayOverrun ?? 0),
+          forecastedCount: acc.forecastedCount + (r.fac == null ? 0 : 1),
+        };
+      },
       { committed: 0, lem: 0, fac: 0, overrun: 0, forecastedCount: 0 }
     );
   }, [filtered]);
 
   const filtersActive =
     !!search || vendorFilter !== 'all' || showForecastedOnly;
+
+  // Auto-expand every vendor group when a filter is active, so search hits
+  // are visible without the user having to click chevrons. Manual expand
+  // state is preserved when filters clear.
+  const effectivelyExpanded = useMemo(() => {
+    if (filtersActive) return new Set(groups.map(([n]) => n));
+    return expandedVendors;
+  }, [filtersActive, groups, expandedVendors]);
+
+  const allExpanded = useMemo(
+    () => groups.every(([name]) => effectivelyExpanded.has(name)),
+    [groups, effectivelyExpanded]
+  );
 
   function clearFilters() {
     setSearch('');
@@ -103,6 +181,23 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
       setSortKey(key);
       setSortDir('desc');
     }
+  }
+
+  function toggleVendor(name: string) {
+    setExpandedVendors((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  function expandAll() {
+    setExpandedVendors(new Set(groups.map(([n]) => n)));
+  }
+
+  function collapseAll() {
+    setExpandedVendors(new Set());
   }
 
   async function saveScope(
@@ -138,9 +233,6 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
     poId: string,
     next: number | null
   ): Promise<{ ok: boolean; error?: string }> {
-    // Optimistic local recompute — the row's FAC + overrun should update
-    // instantly on tab-out, so Mike can see the impact before the round-trip
-    // returns.
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== poId) return r;
@@ -182,21 +274,36 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
             <span className="tabular font-medium text-[var(--text)]">
               {filtered.length}
             </span>{' '}
-            of {rows.length} PO{rows.length === 1 ? '' : 's'} ·{' '}
+            of {rows.length} PO{rows.length === 1 ? '' : 's'} across{' '}
+            <span className="tabular font-medium text-[var(--text)]">
+              {groups.length}
+            </span>{' '}
+            vendor{groups.length === 1 ? '' : 's'} ·{' '}
             <span className="tabular font-medium text-[var(--text)]">
               {totals.forecastedCount}
             </span>{' '}
-            forecasted · FAC total{' '}
-            <span className="tabular font-medium text-[var(--text)]">
+            manually forecasted · FAC total{' '}
+            <span className="tabular font-semibold text-[var(--text)]">
               {formatMoney(totals.fac)}
             </span>
           </>
         }
+        action={
+          groups.length > 0 && (
+            <button
+              type="button"
+              onClick={allExpanded ? collapseAll : expandAll}
+              className="text-xs font-semibold text-[var(--brand-orange)] hover:opacity-80"
+            >
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+          )
+        }
       />
 
       {/* Filter bar */}
-      <div className="px-4 py-3 border-b border-[var(--border)] flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-md rounded-md border border-[var(--border)] px-2 py-1.5">
+      <div className="px-5 py-3.5 border-b border-[var(--border)] flex flex-wrap items-center gap-3 bg-[var(--surface-2)]/30">
+        <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-md rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5">
           <Search
             className="h-4 w-4 text-[var(--text-muted)] shrink-0"
             strokeWidth={2}
@@ -221,7 +328,7 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
         <select
           value={vendorFilter}
           onChange={(e) => setVendorFilter(e.target.value)}
-          className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm"
+          className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-sm"
         >
           <option value="all">All vendors</option>
           {vendorOptions.map((v) => (
@@ -261,15 +368,7 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
                 sortDir={sortDir}
                 onClick={toggleSort}
               >
-                PO
-              </SortableTh>
-              <SortableTh
-                k="vendor_display_name"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onClick={toggleSort}
-              >
-                Vendor
+                Vendor / PO
               </SortableTh>
               <SortableTh
                 k="committed"
@@ -319,46 +418,47 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {groups.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
-                  className="px-4 py-10 text-center text-base text-[var(--text-muted)]"
+                  colSpan={6}
+                  className="px-4 py-14 text-center text-base text-[var(--text-muted)]"
                 >
                   No POs match the current filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((r) => (
-                <ForecastRow
-                  key={r.id}
-                  row={r}
+              groups.map(([vendorName, pos]) => (
+                <VendorGroup
+                  key={vendorName}
+                  vendorName={vendorName}
+                  pos={pos}
+                  expanded={effectivelyExpanded.has(vendorName)}
+                  onToggle={() => toggleVendor(vendorName)}
                   onSavePercent={savePercent}
                   onSaveScope={saveScope}
                 />
               ))
             )}
-            {filtered.length > 0 && (
+            {groups.length > 0 && (
               <tr className="border-t-2 border-[var(--text)]/40 bg-[var(--surface-2)] text-[15px]">
-                <td
-                  colSpan={2}
-                  className="px-4 py-3.5 text-xs uppercase tracking-widest text-[var(--text-muted)] font-semibold"
-                >
-                  Totals · {filtered.length} PO
-                  {filtered.length === 1 ? '' : 's'}
+                <td className="px-4 py-4 text-xs uppercase tracking-widest text-[var(--text-muted)] font-semibold">
+                  Project totals · {filtered.length} PO
+                  {filtered.length === 1 ? '' : 's'} across {groups.length}{' '}
+                  vendor{groups.length === 1 ? '' : 's'}
                 </td>
-                <td className="px-4 py-3.5 text-right tabular font-semibold">
+                <td className="px-4 py-4 text-right tabular font-semibold">
                   {formatMoney(totals.committed)}
                 </td>
-                <td className="px-4 py-3.5 text-right tabular font-semibold">
+                <td className="px-4 py-4 text-right tabular font-semibold">
                   {formatMoney(totals.lem)}
                 </td>
-                <td className="px-4 py-3.5"></td>
-                <td className="px-4 py-3.5 text-right tabular font-semibold text-[var(--text)]">
+                <td className="px-4 py-4"></td>
+                <td className="px-4 py-4 text-right tabular font-semibold">
                   {formatMoney(totals.fac)}
                 </td>
                 <td
-                  className={`px-4 py-3.5 text-right tabular font-semibold ${
+                  className={`px-4 py-4 text-right tabular font-semibold ${
                     totals.overrun > 0.5
                       ? 'text-[var(--over)]'
                       : totals.overrun < -0.5
@@ -379,61 +479,162 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
 }
 
 // -----------------------------------------------------------------------------
-// Header + row
+// Vendor group — accordion header + child PO rows when expanded
 // -----------------------------------------------------------------------------
 
-function SortableTh({
-  children,
-  k,
-  sortKey,
-  sortDir,
-  onClick,
-  right,
+function VendorGroup({
+  vendorName,
+  pos,
+  expanded,
+  onToggle,
+  onSavePercent,
+  onSaveScope,
 }: {
-  children: React.ReactNode;
-  k: SortKey;
-  sortKey: SortKey;
-  sortDir: 'asc' | 'desc';
-  onClick: (k: SortKey) => void;
-  right?: boolean;
+  vendorName: string;
+  pos: ForecastPo[];
+  expanded: boolean;
+  onToggle: () => void;
+  onSavePercent: (
+    poId: string,
+    next: number | null
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onSaveScope: (
+    poId: string,
+    nextScope: string | null
+  ) => Promise<{ ok: boolean; error?: string }>;
 }) {
-  const active = sortKey === k;
+  const accent = accentFor(vendorName);
+
+  const agg = useMemo(() => {
+    return pos.reduce(
+      (acc, p) => {
+        const d = derive(p);
+        return {
+          committed: acc.committed + p.committed,
+          lem: acc.lem + p.lem,
+          fac: acc.fac + (d.displayFac ?? p.committed),
+          overrun: acc.overrun + (d.displayOverrun ?? 0),
+          manualCount: acc.manualCount + (p.fac == null ? 0 : 1),
+        };
+      },
+      { committed: 0, lem: 0, fac: 0, overrun: 0, manualCount: 0 }
+    );
+  }, [pos]);
+
+  const anyManual = agg.manualCount > 0;
+  const pctUsed =
+    agg.committed > 0 ? (agg.lem / agg.committed) * 100 : 0;
+  const overrunTone =
+    agg.overrun > 0.5
+      ? 'bg-[var(--over-bg)] text-[var(--over)] border-[var(--over)]/30'
+      : agg.overrun < -0.5
+        ? 'bg-[var(--under-bg)] text-[var(--under)] border-[var(--under)]/30'
+        : 'bg-[var(--surface-2)] text-[var(--text-muted)] border-[var(--border)]';
+
   return (
-    <th
-      className={`px-4 py-3 text-xs uppercase tracking-wider font-medium ${
-        right ? 'text-right' : 'text-left'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => onClick(k)}
-        className={`inline-flex items-center gap-1 transition-colors ${
-          active
-            ? 'text-[var(--text)] font-semibold'
-            : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-        } ${right ? 'ml-auto' : ''}`}
+    <>
+      {/* Vendor rollup / accordion header */}
+      <tr
+        onClick={onToggle}
+        className="cursor-pointer border-b border-[var(--border)] hover:bg-[var(--surface-2)]/70 transition-colors"
+        style={{
+          background: `linear-gradient(to right, ${accent.bg}55 0%, ${accent.bg}20 45%, transparent 100%)`,
+        }}
       >
-        {children}
-        {active ? (
-          sortDir === 'asc' ? (
-            <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+        <td className="px-4 py-3.5">
+          <div className="flex items-center gap-3">
+            <ChevronRight
+              className={`h-4 w-4 text-[var(--text-muted)] shrink-0 transition-transform ${
+                expanded ? 'rotate-90' : ''
+              }`}
+              strokeWidth={2.5}
+            />
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold shrink-0"
+              style={{ background: accent.bg, color: accent.fg }}
+            >
+              {initials(vendorName)}
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-semibold text-[var(--text)] leading-tight">
+                {vendorName}
+              </div>
+              <div className="text-xs text-[var(--text-muted)] tabular mt-0.5">
+                {pos.length} PO{pos.length === 1 ? '' : 's'} ·{' '}
+                {pctUsed.toFixed(1)}% burn
+                {agg.manualCount > 0 && (
+                  <>
+                    {' '}·{' '}
+                    <span className="text-[var(--brand-orange)] font-medium">
+                      {agg.manualCount} forecasted
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </td>
+        <td className="px-4 py-3.5 text-right tabular font-semibold text-[var(--text)]">
+          {formatMoney(agg.committed)}
+        </td>
+        <td className="px-4 py-3.5 text-right tabular text-[var(--text)]">
+          {formatMoney(agg.lem)}
+        </td>
+        <td className="px-4 py-3.5"></td>
+        <td className="px-4 py-3.5 text-right tabular font-semibold">
+          {anyManual ? (
+            <span className="text-[var(--text)]">{formatMoney(agg.fac)}</span>
           ) : (
-            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.5} />
-          )
-        ) : (
-          <span className="w-3.5" />
-        )}
-      </button>
-    </th>
+            <span
+              className="text-[var(--text-muted)]/70 italic"
+              title="Implied — all POs auto-set to LEM ÷ committed"
+            >
+              ~{formatMoney(agg.fac)}
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-3.5 text-right">
+          <span
+            className={`inline-block tabular font-semibold text-sm rounded-full border px-2.5 py-0.5 ${overrunTone} ${
+              !anyManual ? 'opacity-60' : ''
+            }`}
+          >
+            {agg.overrun > 0 ? '+' : ''}
+            {formatMoney(agg.overrun)}
+          </span>
+        </td>
+      </tr>
+
+      {/* Child PO rows */}
+      {expanded &&
+        pos.map((po, i) => (
+          <ForecastRow
+            key={po.id}
+            row={po}
+            accent={accent}
+            zebra={i % 2 === 1}
+            onSavePercent={onSavePercent}
+            onSaveScope={onSaveScope}
+          />
+        ))}
+    </>
   );
 }
 
+// -----------------------------------------------------------------------------
+// Individual PO row (nested inside a vendor group)
+// -----------------------------------------------------------------------------
+
 function ForecastRow({
   row,
+  accent,
+  zebra,
   onSavePercent,
   onSaveScope,
 }: {
   row: ForecastPo;
+  accent: { fg: string; bg: string };
+  zebra: boolean;
   onSavePercent: (
     poId: string,
     next: number | null
@@ -449,8 +650,6 @@ function ForecastRow({
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Sync draft with row when the outer state changes (e.g. after external
-  // refresh). Guarded so an in-progress edit doesn't get blown away.
   useEffect(() => {
     if (!saving) {
       setDraft(row.percent_complete == null ? '' : String(row.percent_complete));
@@ -474,25 +673,13 @@ function ForecastRow({
     setSaving(false);
     if (!result.ok) {
       setError(result.error ?? 'Save failed');
-      // Revert draft to last saved value so the input matches state.
       setDraft(
         row.percent_complete == null ? '' : String(row.percent_complete)
       );
     }
   }
 
-  // Implied % — the value that would make FAC equal to committed. Shown
-  // as the input placeholder AND used to populate the FAC / Overrun cells
-  // when nothing is manually entered yet, so the whole row shows something
-  // useful the moment the page loads. Rendered muted + italic with a ~
-  // prefix so the reader can tell inferred numbers from manual ones.
-  const impliedPct =
-    row.committed > 0 && row.lem > 0
-      ? Math.min(100, (row.lem / row.committed) * 100)
-      : null;
-  const isImplied = row.percent_complete == null;
-  const displayFac = row.fac ?? (impliedPct != null ? row.committed : null);
-  const displayOverrun = row.overrun ?? (impliedPct != null ? 0 : null);
+  const { impliedPct, isImplied, displayFac, displayOverrun } = derive(row);
 
   const overrunTone =
     displayOverrun == null
@@ -507,16 +694,21 @@ function ForecastRow({
             : 'text-[var(--under)]'
           : 'text-[var(--text-muted)]';
 
+  const bg = zebra ? 'bg-[var(--surface-2)]/25' : 'bg-transparent';
+
   return (
-    <tr className="border-b border-[var(--border)] hover:bg-[var(--surface-2)]/50 text-[15px]">
-      <td className="px-4 py-3 align-top">
-        <div className="font-mono text-sm font-medium">{row.po_number}</div>
+    <tr
+      className={`border-b border-[var(--border)]/60 hover:bg-[var(--surface-2)]/60 transition-colors ${bg}`}
+    >
+      <td className="pl-12 pr-4 py-3 align-top border-l-2" style={{ borderLeftColor: accent.fg + '40' }}>
+        <div className="font-mono text-sm font-medium text-[var(--text)]">
+          {row.po_number}
+        </div>
         <EditableScope
           scope={row.scope}
           onSave={(next) => onSaveScope(row.id, next)}
         />
       </td>
-      <td className="px-4 py-3 align-top">{row.vendor_display_name}</td>
       <td className="px-4 py-3 text-right tabular align-top">
         {formatMoney(row.committed)}
       </td>
@@ -580,9 +772,7 @@ function ForecastRow({
           formatMoney(displayFac)
         )}
       </td>
-      <td
-        className={`px-4 py-3 text-right tabular align-top ${overrunTone}`}
-      >
+      <td className={`px-4 py-3 text-right tabular align-top ${overrunTone}`}>
         {displayOverrun == null ? (
           <span className="text-[var(--text-muted)]/50">—</span>
         ) : isImplied ? (
@@ -601,6 +791,56 @@ function ForecastRow({
         )}
       </td>
     </tr>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Sortable column header
+// -----------------------------------------------------------------------------
+
+function SortableTh({
+  children,
+  k,
+  sortKey,
+  sortDir,
+  onClick,
+  right,
+}: {
+  children: React.ReactNode;
+  k: SortKey;
+  sortKey: SortKey;
+  sortDir: 'asc' | 'desc';
+  onClick: (k: SortKey) => void;
+  right?: boolean;
+}) {
+  const active = sortKey === k;
+  return (
+    <th
+      className={`px-4 py-3 text-xs uppercase tracking-wider font-medium ${
+        right ? 'text-right' : 'text-left'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onClick(k)}
+        className={`inline-flex items-center gap-1 transition-colors ${
+          active
+            ? 'text-[var(--text)] font-semibold'
+            : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+        } ${right ? 'ml-auto' : ''}`}
+      >
+        {children}
+        {active ? (
+          sortDir === 'asc' ? (
+            <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.5} />
+          )
+        ) : (
+          <span className="w-3.5" />
+        )}
+      </button>
+    </th>
   );
 }
 
@@ -693,7 +933,10 @@ function EditableScope({
   return (
     <button
       type="button"
-      onClick={() => setEditing(true)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
       title="Click to edit description"
       className="mt-1.5 block text-left text-sm text-[var(--text-muted)] font-sans max-w-md hover:text-[var(--text)] hover:bg-[var(--surface-2)] rounded px-1.5 -mx-1.5 py-0.5 -my-0.5 transition-colors w-full"
     >
