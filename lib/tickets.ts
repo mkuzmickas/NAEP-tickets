@@ -19,6 +19,7 @@ type RawTicket = {
   status: TicketStatus;
   pdf_storage_path: string | null;
   markup_notes: string | null;
+  schedule_package_id: string | null;
   created_at: string;
   created_by: string | null;
   service_pos: {
@@ -61,7 +62,7 @@ export async function getAllTickets(): Promise<TicketRow[]> {
       `
       id, po_id, ticket_number, ticket_date, source_type, is_master,
       face_value, computed_total, reconciled, status,
-      pdf_storage_path, markup_notes, created_at, created_by,
+      pdf_storage_path, markup_notes, schedule_package_id, created_at, created_by,
       service_pos ( po_number, vendor_display_name, scope ),
       line_items ( id, ticket_id, category, description, quantity, unit, rate,
                    source_amount, markup_percent, final_amount, sort_order, created_at )
@@ -87,6 +88,7 @@ export async function getAllTickets(): Promise<TicketRow[]> {
     status: t.status,
     pdf_storage_path: t.pdf_storage_path,
     markup_notes: t.markup_notes,
+    schedule_package_id: t.schedule_package_id,
     created_at: t.created_at,
     created_by: t.created_by,
     po_number: t.service_pos.po_number,
