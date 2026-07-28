@@ -32,14 +32,26 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
     0
   );
 
-  const packagesByEwp = useMemo(() => {
+  const upcomingByDate = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString().slice(0, 10);
+
+    const upcoming = data.packages.filter(
+      (p) => p.planned_ship_date && p.planned_ship_date >= todayIso
+    );
+    upcoming.sort((a, b) =>
+      (a.planned_ship_date ?? '').localeCompare(b.planned_ship_date ?? '')
+    );
+
     const m = new Map<string, TrackerPackage[]>();
-    for (const p of data.packages) {
-      const arr = m.get(p.ewp) ?? [];
+    for (const p of upcoming) {
+      const key = p.planned_ship_date!;
+      const arr = m.get(key) ?? [];
       arr.push(p);
-      m.set(p.ewp, arr);
+      m.set(key, arr);
     }
-    return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(m.entries());
   }, [data.packages]);
 
   return (
@@ -113,38 +125,18 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
 
         <Card>
           <CardHeader
-            title="Packages"
-            subtitle="Grouped by EWP. Actual $ = sum of face_value of tickets tagged to each package."
+            title="Up Next"
+            subtitle="Every package still to ship, chronologically. Actual $ = sum of face_value of tickets tagged to each package."
           />
-          <div className="p-5 space-y-6">
-            {packagesByEwp.length === 0 ? (
-              <EmptyState title="No shipping packages on file yet." />
+          <div className="p-5 space-y-5">
+            {upcomingByDate.length === 0 ? (
+              <EmptyState
+                title="Nothing on the near-term ship schedule."
+                hint="Every dated package has already shipped — check the Ship Schedule page for the full list."
+              />
             ) : (
-              packagesByEwp.map(([ewp, pkgs]) => (
-                <div key={ewp}>
-                  <div className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-semibold mb-2">
-                    {ewp}
-                  </div>
-                  <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]">
-                          <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Package</th>
-                          <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">L×W×H · Weight</th>
-                          <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Budget</th>
-                          <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Actual</th>
-                          <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Variance</th>
-                          <th className="text-center px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Tickets</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pkgs.map((p) => (
-                          <PackageRow key={p.id} pkg={p} />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+              upcomingByDate.map(([date, pkgs]) => (
+                <UpNextGroup key={date} date={date} pkgs={pkgs} />
               ))
             )}
           </div>
@@ -162,45 +154,113 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
   );
 }
 
-function PackageRow({ pkg }: { pkg: TrackerPackage }) {
-  const diff = pkg.actual - pkg.budget_total;
-  const pct = pkg.budget_total > 0 ? (pkg.actual / pkg.budget_total) * 100 : null;
-  const diffCls =
-    diff > 0.5
-      ? 'text-[var(--over)] font-semibold'
-      : diff < -0.5
-        ? 'text-[var(--under)] font-medium'
-        : 'text-[var(--text-muted)]';
-  const dims =
-    pkg.length_ft != null
-      ? `${pkg.length_ft}×${pkg.width_ft}×${pkg.height_ft} ft`
-      : '—';
-  const wt = pkg.weight_lbs ? ` · ${pkg.weight_lbs} lbs` : '';
+function UpNextGroup({ date, pkgs }: { date: string; pkgs: TrackerPackage[] }) {
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((dt.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+
+  const heading = dt.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: dt.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+  });
+
+  const relative =
+    days === 0
+      ? 'Today'
+      : days === 1
+        ? 'Tomorrow'
+        : days > 0 && days < 7
+          ? `In ${days} days`
+          : days >= 7 && days < 14
+            ? 'Next week'
+            : days >= 14 && days < 30
+              ? `In ${Math.round(days / 7)} weeks`
+              : `In ${Math.round(days / 30)} months`;
+
+  const totalBudget = pkgs.reduce((s, p) => s + p.budget_total, 0);
+  const totalActual = pkgs.reduce((s, p) => s + p.actual, 0);
+  const totalDiff = totalActual - totalBudget;
+
   return (
-    <tr className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]">
-      <td className="px-3 py-2 text-sm font-medium">{pkg.tag}</td>
-      <td className="px-3 py-2 text-xs text-[var(--text-muted)] font-mono">
-        {dims}
-        {wt}
-      </td>
-      <td className="px-3 py-2 text-right tabular text-sm">
-        {formatMoney(pkg.budget_total)}
-      </td>
-      <td className="px-3 py-2 text-right tabular text-sm">
-        {formatMoney(pkg.actual)}
-      </td>
-      <td className={`px-3 py-2 text-right tabular text-sm ${diffCls}`}>
-        {formatMoney(diff)}
-        {pct !== null && (
-          <span className="ml-1 text-[10px] font-normal text-[var(--text-muted)]">
-            ({pct.toFixed(0)}%)
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <div className="flex items-baseline gap-3">
+          <span className="text-sm font-semibold text-[var(--text)]">
+            {heading}
           </span>
-        )}
-      </td>
-      <td className="px-3 py-2 text-center text-xs text-[var(--text-muted)] tabular">
-        {pkg.ticket_count}
-      </td>
-    </tr>
+          <span
+            className={`text-[10px] uppercase tracking-widest font-semibold px-1.5 py-0.5 rounded ${
+              days === 0
+                ? 'bg-[var(--brand-orange)] text-white'
+                : days <= 7
+                  ? 'bg-[var(--warn-bg)] text-[var(--warn)]'
+                  : 'bg-[var(--surface-2)] text-[var(--text-muted)]'
+            }`}
+          >
+            {relative}
+          </span>
+          <span className="text-[11px] text-[var(--text-muted)] tabular">
+            {pkgs.length} package{pkgs.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="text-[11px] text-[var(--text-muted)] tabular">
+          {formatMoney(totalActual)} of {formatMoney(totalBudget)}
+          {totalDiff !== 0 && (
+            <span
+              className={`ml-2 font-medium ${totalDiff > 0 ? 'text-[var(--over)]' : 'text-[var(--under)]'}`}
+            >
+              {totalDiff > 0 ? '+' : ''}
+              {formatMoney(totalDiff)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="border border-[var(--border)] rounded-lg overflow-hidden divide-y divide-[var(--border)]">
+        {pkgs.map((p) => (
+          <UpNextRow key={p.id} pkg={p} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UpNextRow({ pkg }: { pkg: TrackerPackage }) {
+  const diff = pkg.actual - pkg.budget_total;
+  const diffCls =
+    Math.abs(diff) < 0.5
+      ? 'text-[var(--text-muted)]'
+      : diff > 0
+        ? 'text-[var(--over)] font-semibold'
+        : 'text-[var(--under)] font-medium';
+  return (
+    <div className="px-4 py-2.5 grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 hover:bg-[var(--surface-2)]">
+      <div className="min-w-0">
+        <div className="text-sm font-medium truncate">{pkg.tag}</div>
+        <div className="text-[10px] text-[var(--text-muted)] truncate">
+          {pkg.ewp}
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Budget</div>
+        <div className="tabular text-sm">{formatMoney(pkg.budget_total)}</div>
+      </div>
+      <div className="text-right">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Actual</div>
+        <div className="tabular text-sm">{formatMoney(pkg.actual)}</div>
+      </div>
+      <div className="text-right">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Variance</div>
+        <div className={`tabular text-sm ${diffCls}`}>{formatMoney(diff)}</div>
+      </div>
+      <div className="text-center min-w-[50px]">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Tickets</div>
+        <div className="tabular text-sm">{pkg.ticket_count}</div>
+      </div>
+    </div>
   );
 }
 
