@@ -103,8 +103,12 @@ function ReportHeader({
   notApproved: number;
   valueAtRisk: number;
 }) {
+  // Rendered as <div>, not <header>: the schedule module's @media print
+  // block globally hides <header> elements to make the ProgramBar
+  // disappear during print; a semantic <header> here would get caught by
+  // the same rule and this letterhead would vanish.
   return (
-    <header
+    <div
       style={{
         borderBottom: '2px solid #d04e00',
         paddingBottom: 12,
@@ -143,7 +147,7 @@ function ReportHeader({
           emphasise
         />
       </div>
-    </header>
+    </div>
   );
 }
 

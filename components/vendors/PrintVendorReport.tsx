@@ -136,8 +136,12 @@ function ReportHeader({
   poCount: number;
   ticketCount: number;
 }) {
+  // Rendered as <div>, not <header>, because the schedule module's
+  // @media print block globally hides <header> elements to make the
+  // ProgramBar disappear during print — a semantic <header> here gets
+  // caught by that same rule and the letterhead vanishes.
   return (
-    <header style={{ marginBottom: 18 }}>
+    <div style={{ marginBottom: 18 }}>
       {/* Brand strip — small orange marker + program name, gives the sheet
           a clear "who published this" line before the vendor takes over. */}
       <div
@@ -227,7 +231,7 @@ function ReportHeader({
           ]}
         />
       </div>
-    </header>
+    </div>
   );
 }
 
