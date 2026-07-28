@@ -9,6 +9,7 @@ import {
   Upload,
   Ship,
   CalendarRange,
+  Truck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Vendors', href: '/vendors', icon: Building2 },
       { label: 'Logged Tickets', href: '/tickets', icon: Table2 },
+      { label: 'Shipping Costs', href: '/shipping-tracker', icon: Truck },
     ],
   },
   {

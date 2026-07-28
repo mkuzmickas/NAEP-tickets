@@ -19,25 +19,42 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => null);
-  if (!body || typeof body.status !== 'string') {
-    return NextResponse.json(
-      { error: 'status is required (pending | invoiced | rejected)' },
-      { status: 400 }
-    );
+  if (!body) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
-  const status = body.status as Status;
-  if (!VALID_STATUSES.includes(status)) {
-    return NextResponse.json(
-      { error: `status must be one of ${VALID_STATUSES.join(', ')}` },
-      { status: 400 }
-    );
+
+  const updates: Record<string, unknown> = {};
+
+  if ('status' in body) {
+    if (typeof body.status !== 'string' || !VALID_STATUSES.includes(body.status as Status)) {
+      return NextResponse.json(
+        { error: `status must be one of ${VALID_STATUSES.join(', ')}` },
+        { status: 400 }
+      );
+    }
+    updates.status = body.status;
+  }
+
+  if ('schedule_package_id' in body) {
+    const v = body.schedule_package_id;
+    if (v !== null && typeof v !== 'string') {
+      return NextResponse.json(
+        { error: 'schedule_package_id must be a UUID string or null' },
+        { status: 400 }
+      );
+    }
+    updates.schedule_package_id = v;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
   }
 
   const { data, error } = await supabase
     .from('tickets')
-    .update({ status })
+    .update(updates)
     .eq('id', params.id)
-    .select('id, status')
+    .select('id, status, schedule_package_id')
     .single();
 
   if (error || !data) {
@@ -47,7 +64,7 @@ export async function PATCH(
     );
   }
 
-  return NextResponse.json({ ok: true, id: data.id, status: data.status });
+  return NextResponse.json({ ok: true, ...data });
 }
 
 export async function DELETE(

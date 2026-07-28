@@ -10,6 +10,7 @@ export type ServicePO = {
   ap_invoiced_amount: number;
   vendor_system_incurred: number | null;
   vendor_job_ref: string | null;
+  tracks_shipping: boolean;
   notes: string | null;
   created_at: string;
 };
@@ -31,6 +32,7 @@ export type Ticket = {
   status: TicketStatus;
   pdf_storage_path: string | null;
   markup_notes: string | null;
+  schedule_package_id: string | null;
   created_at: string;
   created_by: string | null;
 };
