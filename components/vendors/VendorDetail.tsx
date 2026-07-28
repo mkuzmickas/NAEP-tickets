@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, XCircle, Plus, Check } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Plus, Check, Printer } from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader, StatTile, Card } from '@/components/ui/Primitives';
 import { AddPoDialog } from '@/components/vendors/AddPoDialog';
+import { PrintVendorReport } from '@/components/vendors/PrintVendorReport';
 import { formatMoney, formatPct } from '@/lib/money';
 import type { PoWithTickets, TicketBrief, VendorSummary } from '@/lib/vendors';
 
@@ -22,6 +23,8 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
       : 0;
 
   return (
+    <>
+    <div className="no-print">
     <PageContainer>
       <div className="space-y-6">
         <div>
@@ -42,13 +45,25 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
               </>
             }
             action={
-              <button
-                onClick={() => setAddPoOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-orange)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
-              >
-                <Plus className="h-4 w-4" strokeWidth={2.5} />
-                Add PO
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]/40 transition-colors"
+                  title="Print a light, greyscale-safe snapshot of this vendor's POs and tickets"
+                >
+                  <Printer className="h-4 w-4" strokeWidth={2.5} />
+                  Print report
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddPoOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-orange)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2.5} />
+                  Add PO
+                </button>
+              </div>
             }
           />
         </div>
@@ -104,6 +119,9 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
         </div>
       </div>
     </PageContainer>
+    </div>
+    <PrintVendorReport vendor={vendor} />
+    </>
   );
 }
 
