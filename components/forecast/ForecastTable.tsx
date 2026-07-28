@@ -105,6 +105,35 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
     }
   }
 
+  async function saveScope(
+    poId: string,
+    nextScope: string | null
+  ): Promise<{ ok: boolean; error?: string }> {
+    setRows((prev) =>
+      prev.map((r) => (r.id === poId ? { ...r, scope: nextScope } : r))
+    );
+    try {
+      const res = await fetch(`/api/pos/${poId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: nextScope }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return {
+          ok: false,
+          error: body.error ?? `Save failed (${res.status})`,
+        };
+      }
+      return { ok: true };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
+
   async function savePercent(
     poId: string,
     next: number | null
@@ -223,7 +252,7 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
 
       {/* Table */}
       <div className="w-full overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-[15px]">
           <thead>
             <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]">
               <SortableTh
@@ -294,37 +323,42 @@ export function ForecastTable({ rows: initialRows }: { rows: ForecastPo[] }) {
               <tr>
                 <td
                   colSpan={7}
-                  className="px-4 py-8 text-center text-sm text-[var(--text-muted)]"
+                  className="px-4 py-10 text-center text-base text-[var(--text-muted)]"
                 >
                   No POs match the current filters.
                 </td>
               </tr>
             ) : (
               filtered.map((r) => (
-                <ForecastRow key={r.id} row={r} onSavePercent={savePercent} />
+                <ForecastRow
+                  key={r.id}
+                  row={r}
+                  onSavePercent={savePercent}
+                  onSaveScope={saveScope}
+                />
               ))
             )}
             {filtered.length > 0 && (
-              <tr className="border-t-2 border-[var(--text)]/40 bg-[var(--surface-2)]">
+              <tr className="border-t-2 border-[var(--text)]/40 bg-[var(--surface-2)] text-[15px]">
                 <td
                   colSpan={2}
-                  className="px-3 py-3 text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold"
+                  className="px-4 py-3.5 text-xs uppercase tracking-widest text-[var(--text-muted)] font-semibold"
                 >
                   Totals · {filtered.length} PO
                   {filtered.length === 1 ? '' : 's'}
                 </td>
-                <td className="px-3 py-3 text-right tabular font-semibold">
+                <td className="px-4 py-3.5 text-right tabular font-semibold">
                   {formatMoney(totals.committed)}
                 </td>
-                <td className="px-3 py-3 text-right tabular font-semibold">
+                <td className="px-4 py-3.5 text-right tabular font-semibold">
                   {formatMoney(totals.lem)}
                 </td>
-                <td className="px-3 py-3"></td>
-                <td className="px-3 py-3 text-right tabular font-semibold text-[var(--text)]">
+                <td className="px-4 py-3.5"></td>
+                <td className="px-4 py-3.5 text-right tabular font-semibold text-[var(--text)]">
                   {formatMoney(totals.fac)}
                 </td>
                 <td
-                  className={`px-3 py-3 text-right tabular font-semibold ${
+                  className={`px-4 py-3.5 text-right tabular font-semibold ${
                     totals.overrun > 0.5
                       ? 'text-[var(--over)]'
                       : totals.overrun < -0.5
@@ -366,7 +400,7 @@ function SortableTh({
   const active = sortKey === k;
   return (
     <th
-      className={`px-3 py-2 text-[10px] uppercase tracking-wider font-medium ${
+      className={`px-4 py-3 text-xs uppercase tracking-wider font-medium ${
         right ? 'text-right' : 'text-left'
       }`}
     >
@@ -382,12 +416,12 @@ function SortableTh({
         {children}
         {active ? (
           sortDir === 'asc' ? (
-            <ChevronUp className="h-3 w-3" strokeWidth={2.5} />
+            <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} />
           ) : (
-            <ChevronDown className="h-3 w-3" strokeWidth={2.5} />
+            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.5} />
           )
         ) : (
-          <span className="w-3" />
+          <span className="w-3.5" />
         )}
       </button>
     </th>
@@ -397,11 +431,16 @@ function SortableTh({
 function ForecastRow({
   row,
   onSavePercent,
+  onSaveScope,
 }: {
   row: ForecastPo;
   onSavePercent: (
     poId: string,
     next: number | null
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onSaveScope: (
+    poId: string,
+    nextScope: string | null
   ) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [draft, setDraft] = useState(
@@ -452,21 +491,22 @@ function ForecastRow({
           : 'text-[var(--text-muted)]';
 
   return (
-    <tr className="border-b border-[var(--border)] hover:bg-[var(--surface-2)]/50">
-      <td className="px-3 py-2.5 font-mono text-xs">
-        <div>{row.po_number}</div>
-        {row.scope && (
-          <div className="text-[10px] text-[var(--text-muted)] font-sans truncate max-w-xs mt-0.5">
-            {row.scope}
-          </div>
-        )}
+    <tr className="border-b border-[var(--border)] hover:bg-[var(--surface-2)]/50 text-[15px]">
+      <td className="px-4 py-3 align-top">
+        <div className="font-mono text-sm font-medium">{row.po_number}</div>
+        <EditableScope
+          scope={row.scope}
+          onSave={(next) => onSaveScope(row.id, next)}
+        />
       </td>
-      <td className="px-3 py-2.5">{row.vendor_display_name}</td>
-      <td className="px-3 py-2.5 text-right tabular">
+      <td className="px-4 py-3 align-top">{row.vendor_display_name}</td>
+      <td className="px-4 py-3 text-right tabular align-top">
         {formatMoney(row.committed)}
       </td>
-      <td className="px-3 py-2.5 text-right tabular">{formatMoney(row.lem)}</td>
-      <td className="px-3 py-2.5 text-right">
+      <td className="px-4 py-3 text-right tabular align-top">
+        {formatMoney(row.lem)}
+      </td>
+      <td className="px-4 py-3 text-right align-top">
         <div className="inline-flex items-center gap-1">
           <input
             type="number"
@@ -494,29 +534,31 @@ function ForecastRow({
             }}
             disabled={saving}
             placeholder="—"
-            className={`w-16 text-right tabular rounded border px-1.5 py-0.5 text-sm focus:outline-none disabled:opacity-60 ${
+            className={`w-20 text-right tabular rounded border px-2 py-1 text-[15px] focus:outline-none disabled:opacity-60 ${
               error
                 ? 'border-[var(--over)] focus:border-[var(--over)]'
                 : 'border-[var(--border)] focus:border-[var(--brand-orange)]'
             }`}
           />
-          <span className="text-xs text-[var(--text-muted)] w-3">%</span>
+          <span className="text-sm text-[var(--text-muted)] w-3">%</span>
         </div>
         {error && (
-          <div className="text-[10px] text-[var(--over)] mt-0.5 inline-flex items-center gap-1 justify-end">
-            <AlertCircle className="h-3 w-3" strokeWidth={2.5} />
+          <div className="text-xs text-[var(--over)] mt-1 inline-flex items-center gap-1 justify-end">
+            <AlertCircle className="h-3.5 w-3.5" strokeWidth={2.5} />
             {error}
           </div>
         )}
       </td>
-      <td className="px-3 py-2.5 text-right tabular">
+      <td className="px-4 py-3 text-right tabular align-top">
         {row.fac == null ? (
           <span className="text-[var(--text-muted)]/50">—</span>
         ) : (
           formatMoney(row.fac)
         )}
       </td>
-      <td className={`px-3 py-2.5 text-right tabular ${overrunTone}`}>
+      <td
+        className={`px-4 py-3 text-right tabular align-top ${overrunTone}`}
+      >
         {row.overrun == null ? (
           <span className="text-[var(--text-muted)]/50">—</span>
         ) : (
@@ -527,5 +569,107 @@ function ForecastRow({
         )}
       </td>
     </tr>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// EditableScope — click the scope text to swap in a textarea; blur/Enter
+// commits, Escape reverts. Empty scope shows an italic prompt so the click
+// target is obvious even when nothing is written yet.
+// -----------------------------------------------------------------------------
+
+function EditableScope({
+  scope,
+  onSave,
+}: {
+  scope: string | null;
+  onSave: (
+    next: string | null
+  ) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(scope ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!editing) setDraft(scope ?? '');
+  }, [scope, editing]);
+
+  async function commit() {
+    const trimmed = draft.trim();
+    const next = trimmed === '' ? null : trimmed;
+    if (next === (scope ?? null)) {
+      setEditing(false);
+      setError('');
+      return;
+    }
+    setSaving(true);
+    const result = await onSave(next);
+    setSaving(false);
+    if (result.ok) {
+      setEditing(false);
+      setError('');
+    } else {
+      setError(result.error ?? 'Save failed');
+    }
+  }
+
+  function cancel() {
+    setDraft(scope ?? '');
+    setError('');
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="mt-1.5">
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (error) setError('');
+          }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              e.currentTarget.blur();
+            } else if (e.key === 'Escape') {
+              cancel();
+            }
+          }}
+          disabled={saving}
+          rows={2}
+          placeholder="Description…"
+          className="w-full max-w-lg rounded border border-[var(--brand-orange)] px-2 py-1.5 text-sm font-sans focus:outline-none disabled:opacity-60 resize-y min-h-[3rem]"
+        />
+        <div className="mt-0.5 text-[11px] text-[var(--text-muted)] italic">
+          Enter to save · Shift+Enter for a new line · Esc to cancel
+        </div>
+        {error && (
+          <div className="text-xs text-[var(--over)] mt-1 inline-flex items-center gap-1">
+            <AlertCircle className="h-3.5 w-3.5" strokeWidth={2.5} />
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="Click to edit description"
+      className="mt-1.5 block text-left text-sm text-[var(--text-muted)] font-sans max-w-md hover:text-[var(--text)] hover:bg-[var(--surface-2)] rounded px-1.5 -mx-1.5 py-0.5 -my-0.5 transition-colors w-full"
+    >
+      {scope ?? (
+        <span className="italic text-[var(--text-muted)]/70">
+          Click to add description
+        </span>
+      )}
+    </button>
   );
 }
