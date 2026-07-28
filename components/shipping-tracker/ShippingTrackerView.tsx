@@ -274,6 +274,59 @@ function AssignPackageModal({
     );
   }, [packages, pickSearch]);
 
+  // Score every package against the ticket's field notes + date proximity,
+  // return the highest-scoring one (if it clears a minimum bar). Runs once
+  // when the modal opens.
+  const suggestion = useMemo<
+    { pkg: TrackerPackage; matched: string[] } | null
+  >(() => {
+    const notes = (ticket.field_notes ?? '').toLowerCase();
+    if (!notes) return null;
+
+    // Break every package tag / EWP into candidate tokens ≥3 chars, dropping
+    // stopwords ("ship","loose","load","package", etc.) so common connector
+    // words don't inflate scores.
+    const STOPWORDS = new Set([
+      'ship','loose','load','loads','package','packages','skid','the','and','for','with',
+    ]);
+    function tokenize(s: string): string[] {
+      return s
+        .toLowerCase()
+        .split(/[\s\-\/(),.]+/)
+        .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+    }
+
+    const ticketTs = new Date(ticket.ticket_date + 'T00:00:00').getTime();
+    let best: { pkg: TrackerPackage; score: number; matched: string[] } | null = null;
+
+    for (const p of packages) {
+      const candidateTokens = Array.from(
+        new Set([...tokenize(p.tag), ...tokenize(p.ewp)])
+      );
+      const matched: string[] = [];
+      let score = 0;
+      for (const tok of candidateTokens) {
+        if (notes.includes(tok)) {
+          matched.push(tok);
+          // Numbers / mod tags / IDs are far more discriminating than words.
+          score += /\d/.test(tok) ? 3 : 1;
+        }
+      }
+      // Small bonus if planned_ship_date is within ±5 days of the ticket date.
+      if (score > 0 && p.planned_ship_date) {
+        const pkgTs = new Date(p.planned_ship_date + 'T00:00:00').getTime();
+        const dayDiff = Math.abs(pkgTs - ticketTs) / 86_400_000;
+        if (dayDiff <= 5) score += 0.5;
+      }
+      if (score > 0 && (best === null || score > best.score)) {
+        best = { pkg: p, score, matched };
+      }
+    }
+
+    if (!best || best.score < 2) return null;
+    return { pkg: best.pkg, matched: best.matched };
+  }, [ticket, packages]);
+
   function formatShipDate(iso: string | null): string {
     if (!iso) return 'No ship date';
     const [y, m, d] = iso.split('-').map(Number);
@@ -363,7 +416,39 @@ function AssignPackageModal({
             Ticket <span className="font-mono">{ticket.ticket_number}</span> ·{' '}
             <span className="tabular">{formatMoney(ticket.face_value)}</span>
           </p>
+          {ticket.field_notes && (
+            <p className="mt-2 text-[11px] text-[var(--text-muted)] italic line-clamp-2">
+              &ldquo;{ticket.field_notes}&rdquo;
+            </p>
+          )}
         </div>
+
+        {suggestion && (
+          <div className="px-5 pt-4">
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold mb-1.5">
+              Suggested match
+            </div>
+            <button
+              onClick={() => assignTo(suggestion.pkg.id)}
+              disabled={saving}
+              className="w-full text-left px-3 py-2.5 rounded-md border-2 border-[var(--brand-orange)] bg-[var(--brand-orange)]/5 hover:bg-[var(--brand-orange)]/10 transition-colors disabled:opacity-60"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-[var(--text)] truncate">
+                    {suggestion.pkg.tag}
+                  </div>
+                  <div className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">
+                    {suggestion.pkg.ewp} · matched: {suggestion.matched.join(', ')}
+                  </div>
+                </div>
+                <div className="shrink-0 text-[10px] uppercase tracking-widest font-semibold text-[var(--brand-orange)] whitespace-nowrap">
+                  ↵ Assign
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
 
         <div className="px-5 py-4">
           <div className="flex gap-2 mb-4">

@@ -28,6 +28,9 @@ export type TrackerTicket = {
   status: 'pending' | 'invoiced' | 'rejected';
   schedule_package_id: string | null;
   schedule_package_tag: string | null;
+  /** Concatenated markup_notes + line_item descriptions — used to suggest the
+   *  matching schedule package when the user opens the assign modal. */
+  field_notes: string | null;
 };
 
 export type TrendPoint = { date: string; value: number };
@@ -70,6 +73,8 @@ type RawTicket = {
   face_value: string | number;
   status: 'pending' | 'invoiced' | 'rejected';
   schedule_package_id: string | null;
+  markup_notes: string | null;
+  line_items: { description: string }[];
 };
 
 function n(v: string | number | null): number | null {
@@ -111,13 +116,13 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
     const { data, error } = await supabase
       .from('tickets')
       .select(
-        'id, po_id, ticket_number, ticket_date, face_value, status, schedule_package_id'
+        'id, po_id, ticket_number, ticket_date, face_value, status, schedule_package_id, markup_notes, line_items ( description )'
       )
       .in('po_id', trackedPoIds)
       .neq('status', 'rejected')
       .order('ticket_date', { ascending: true });
     if (error) throw error;
-    ticketRows = (data ?? []) as RawTicket[];
+    ticketRows = (data ?? []) as unknown as RawTicket[];
   }
 
   const pkgById = new Map<string, RawPkg>();
@@ -162,6 +167,15 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
         const pkg = t.schedule_package_id
           ? pkgById.get(t.schedule_package_id)
           : null;
+        // Fold markup_notes + every line-item description into a single
+        // searchable string. Empty string collapses to null so the client
+        // can distinguish "no notes on file" from "notes matched nothing".
+        const notesParts: string[] = [];
+        if (t.markup_notes) notesParts.push(t.markup_notes);
+        for (const li of t.line_items ?? []) {
+          if (li.description) notesParts.push(li.description);
+        }
+        const notes = notesParts.join(' · ').trim();
         return {
           id: t.id,
           po_id: t.po_id,
@@ -172,6 +186,7 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
           status: t.status,
           schedule_package_id: t.schedule_package_id,
           schedule_package_tag: pkg ? pkg.tag : null,
+          field_notes: notes.length > 0 ? notes : null,
         };
       });
     return {
