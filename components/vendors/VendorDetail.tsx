@@ -142,13 +142,23 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
       {/* Header */}
       <div className="px-6 py-5 border-b border-[var(--border)] flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/tickets?po=${encodeURIComponent(po.po_number)}`}
-            className="font-mono text-sm font-semibold tracking-wide uppercase text-[var(--text)] hover:text-[var(--brand-orange)] hover:underline underline-offset-2 decoration-2 transition-colors inline-block"
-            title={`View every ticket logged against ${po.po_number}`}
-          >
-            {po.po_number}
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href={`/tickets?po=${encodeURIComponent(po.po_number)}`}
+              className="font-mono text-sm font-semibold tracking-wide uppercase text-[var(--text)] hover:text-[var(--brand-orange)] hover:underline underline-offset-2 decoration-2 transition-colors"
+              title={`View every ticket logged against ${po.po_number}`}
+            >
+              {po.po_number}
+            </Link>
+            {po.vendor_job_ref && (
+              <span
+                className="font-mono text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] bg-[var(--surface-2)] border border-[var(--border)] px-1.5 py-0.5 rounded"
+                title="Vendor's own job number"
+              >
+                {po.vendor_job_ref}
+              </span>
+            )}
+          </div>
           {po.project_cost_code && (
             <div className="font-mono text-[10px] text-[var(--text-muted)] mt-0.5">
               {po.project_cost_code}

@@ -13,6 +13,7 @@ export type PoWithTickets = {
   po_number: string;
   scope: string | null;
   project_cost_code: string | null;
+  vendor_job_ref: string | null;
   committed: number;
   lem: number;
   vendor_system_incurred: number | null;
@@ -49,6 +50,7 @@ type RawPo = {
   vendor_legal_name: string;
   scope: string | null;
   project_cost_code: string | null;
+  vendor_job_ref: string | null;
   committed_amount: string | number;
   vendor_system_incurred: string | number | null;
 };
@@ -69,7 +71,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     supabase
       .from('service_pos')
       .select(
-        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, committed_amount, vendor_system_incurred'
+        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, vendor_system_incurred'
       ),
     supabase
       .from('tickets')
@@ -110,6 +112,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       po_number: p.po_number,
       scope: p.scope,
       project_cost_code: p.project_cost_code,
+      vendor_job_ref: p.vendor_job_ref,
       committed,
       lem,
       vendor_system_incurred: vsi,
