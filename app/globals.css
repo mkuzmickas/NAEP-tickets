@@ -27,6 +27,7 @@
   --under-bg: #e8f5ed;
   --warn:     #b8770a;
   --warn-bg:  #fdf3e0;
+  --amber:    #f5b119;   /* sureline brand amber — tracked-by-ewp badge + ewp bucket left border */
   --info:     #2563a8;
   --info-bg:  #e9f1fb;
 }
@@ -207,5 +208,67 @@
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+}
+
+/* ============================================================
+   Ticket Map — Print-unapproved report
+   Triggered by the Print unapproved button on /ticket-map
+   ============================================================ */
+
+/* Hide the report on screen; the @media print block below reveals it. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Hide sidebar (any non-body child of the authed shell) and the
+     program bar (any non-<main> child of the authed body). Belt and
+     suspenders with the earlier `header {display:none}` rule so the
+     ticket-map report prints no matter which element the ProgramBar
+     resolves to. */
+  .authed-shell > *:not(.authed-body) {
+    display: none !important;
+  }
+  .authed-body > *:not(main) {
+    display: none !important;
+  }
+
+  /* Hide the interactive map; reveal the print report. */
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+
+  /* Pin light colours on the report so a dark-mode screen still
+     prints legibly. Chip colours (green/red text + border) come
+     through the schedule-block's `* { print-color-adjust: exact }`
+     rule already; we just make sure the DEFAULT is black on white. */
+  .print-only,
+  .print-only * {
+    color: #131417;
+  }
+  .print-only {
+    background: #fff !important;
+  }
+
+  /* Section per PO. Keep the heading + first table row together, but
+     let long tables split across pages with header repeat. */
+  .print-po-section {
+    break-inside: auto;
+    page-break-inside: auto;
+    margin-top: 1.25rem;
+  }
+  .print-po-section:first-of-type {
+    margin-top: 0;
+  }
+  .print-po-section thead {
+    display: table-header-group;
+  }
+  .print-po-section tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }

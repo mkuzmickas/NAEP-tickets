@@ -1,300 +1,395 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { CheckCircle2, XCircle, Printer, ExternalLink } from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
-import { CheckCircle2, XCircle } from 'lucide-react';
 import {
-  Badge,
-  Card,
-  CardHeader,
-  EmptyState,
   PageHeader,
   StatTile,
+  Card,
+  EmptyState,
 } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
-import type { TicketMapPo, TicketMapTicket } from '@/lib/ticketMap';
+import {
+  bucketTicketsByEwp,
+  type MapEwpBucket,
+  type MapPo,
+  type MapTicket,
+  type TicketMapData,
+} from '@/lib/ticketMap';
+import { PrintUnapproved } from './PrintUnapproved';
 
-type Status = 'pending' | 'invoiced' | 'rejected';
+// -----------------------------------------------------------------------------
+// Top-level TicketMap
+// -----------------------------------------------------------------------------
 
-function shortDate(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}-${m}`.slice(0, 5) + '/' + y.slice(2);
-}
-
-export function TicketMap({
-  pos,
-  tickets,
-  selectedVendor,
-}: {
-  pos: TicketMapPo[];
-  tickets: TicketMapTicket[];
-  selectedVendor: string | null;
-}) {
+export function TicketMap({ data }: { data: TicketMapData }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const vendorList = useMemo(() => {
-    const map = new Map<string, { poCount: number }>();
-    for (const p of pos) {
-      const cur = map.get(p.vendor_display_name) ?? { poCount: 0 };
-      cur.poCount++;
-      map.set(p.vendor_display_name, cur);
-    }
-    return Array.from(map.entries())
-      .map(([name, meta]) => ({ name, poCount: meta.poCount }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [pos]);
+  // URL-driven filters so a view is a shareable link (spec §3.3).
+  const approvalFilter: 'all' | 'not_approved' =
+    searchParams.get('approval') === 'not_approved' ? 'not_approved' : 'all';
+  const jobFilter = searchParams.get('job');
 
-  const vendorPos = useMemo(
-    () =>
-      selectedVendor
-        ? pos.filter((p) => p.vendor_display_name === selectedVendor)
-        : [],
-    [pos, selectedVendor]
-  );
-
-  const ticketsByPo = useMemo(() => {
-    const map = new Map<string, TicketMapTicket[]>();
-    for (const t of tickets) {
-      const arr = map.get(t.po_id) ?? [];
-      arr.push(t);
-      map.set(t.po_id, arr);
-    }
-    return map;
-  }, [tickets]);
-
-  const totals = useMemo(() => {
-    const total = tickets.length;
-    const approved = tickets.filter((t) => t.status === 'invoiced').length;
-    const pending = tickets.filter((t) => t.status === 'pending').length;
-    const valueAtRisk = tickets
-      .filter((t) => t.status === 'pending')
-      .reduce((s, t) => s + t.face_value, 0);
-    const totalValue = tickets.reduce((s, t) => s + t.face_value, 0);
-    const pctApproved = total > 0 ? Math.round((approved / total) * 100) : 0;
-    return { total, approved, pending, valueAtRisk, totalValue, pctApproved };
-  }, [tickets]);
-
-  function selectVendor(v: string | null) {
-    if (v === null) {
-      router.push('/ticket-map');
-    } else {
-      router.push(`/ticket-map?vendor=${encodeURIComponent(v)}`);
-    }
+  function setParam(key: string, value: string | null) {
+    const next = new URLSearchParams(Array.from(searchParams.entries()));
+    if (!value || value === 'all') next.delete(key);
+    else next.set(key, value);
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
+  // Apply filters. Tiles always show unfiltered totals; only the PO cards
+  // and their chips narrow, so the "state of the world" numbers stay stable
+  // regardless of how you're slicing the map.
+  const visiblePos = useMemo<MapPo[]>(() => {
+    return data.pos
+      .filter((p) => !jobFilter || p.job_number === jobFilter)
+      .map((p) => {
+        if (approvalFilter === 'all') return p;
+        const filtered = p.tickets.filter((t) => !t.approved);
+        return {
+          ...p,
+          tickets: filtered,
+          ticket_count: filtered.length,
+          approved_count: 0,
+          not_approved_count: filtered.length,
+          total_billable: filtered.reduce((s, t) => s + t.face_value, 0),
+          value_at_risk: filtered.reduce((s, t) => s + t.face_value, 0),
+        };
+      })
+      // When "not approved only" is on, empty PO cards are just noise — drop
+      // them. When "all" is on, keep empty POs so the map still lists them.
+      .filter(
+        (p) =>
+          approvalFilter === 'all' ? true : p.tickets.length > 0
+      );
+  }, [data.pos, jobFilter, approvalFilter]);
+
+  const pctApproved =
+    data.totals.tickets > 0
+      ? Math.round((data.totals.approved / data.totals.tickets) * 100)
+      : 0;
+
   return (
-    <PageContainer>
-      <div className="space-y-6">
-        <PageHeader
-          title="Ticket Map"
-          subtitle="Every field ticket, coloured by Enbridge approval status (Invoiced = green, Pending = red / at risk)."
+    <>
+      <div className="no-print">
+        <PageContainer>
+          <div className="space-y-6">
+            <PageHeader
+              title="Ticket Map"
+          subtitle={
+            <>
+              Every field ticket, coloured by client approval status (
+              <span className="text-[var(--under)] font-medium">
+                Approved by Client/PM
+              </span>{' '}
+              = green).
+            </>
+          }
+          action={
+            <div className="flex items-center gap-2">
+              <Link
+                href="/vendors"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]/40 transition-colors"
+              >
+                Vendor view
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.25} />
+              </Link>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[var(--over)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+                title="Prints a light, greyscale-safe PDF grouped by PO"
+              >
+                <Printer className="h-4 w-4" strokeWidth={2.5} />
+                Print unapproved
+              </button>
+            </div>
+          }
         />
 
+        {/* Four summary tiles (§3.2) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatTile
+            label="Tickets issued"
+            value={String(data.totals.tickets)}
+            sub={`across ${data.totals.jobs} job${data.totals.jobs === 1 ? '' : 's'}`}
+          />
+          <StatTile
+            label="Approved by Client/PM"
+            value={String(data.totals.approved)}
+            sub={`${pctApproved}% approved & billable`}
+            tone="under"
+          />
+          <StatTile
+            label="Not yet approved"
+            value={String(data.totals.not_approved)}
+            sub="sent, on hold, or no record"
+            tone="over"
+            emphasis
+          />
+          <StatTile
+            label="Value at risk"
+            value={formatMoney(data.totals.value_at_risk)}
+            sub="not yet billable"
+            tone="over"
+          />
+        </div>
+
+        {/* Legend + filter bar (§3.3) */}
         <Card>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
-            <div className="text-[0.65rem] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
-              Vendor
-            </div>
-            {vendorList.length === 0 ? (
-              <span className="text-sm text-[var(--text-muted)] italic">
-                No vendors on file yet.
-              </span>
-            ) : (
-              <>
-                <button
-                  onClick={() => selectVendor(null)}
-                  className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                    selectedVendor === null
-                      ? 'bg-enbridge-black text-white'
-                      : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)]'
-                  }`}
+          <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-5 flex-wrap">
+            <LegendChip tone="under">Approved by Client/PM</LegendChip>
+            <LegendChip tone="over">Not yet approved — at risk</LegendChip>
+          </div>
+          <div className="p-5 space-y-3">
+            <FilterRow label="Show">
+              <FilterPill
+                active={approvalFilter === 'all'}
+                onClick={() => setParam('approval', null)}
+              >
+                All tickets
+              </FilterPill>
+              <FilterPill
+                active={approvalFilter === 'not_approved'}
+                tone="over"
+                onClick={() => setParam('approval', 'not_approved')}
+              >
+                Not approved only
+              </FilterPill>
+            </FilterRow>
+            {data.jobs.length > 1 && (
+              <FilterRow label="Job">
+                <FilterPill
+                  active={!jobFilter}
+                  onClick={() => setParam('job', null)}
                 >
-                  All tickets
-                </button>
-                <span className="mx-0.5 w-px self-stretch bg-[var(--border)]" />
-                {vendorList.map((v) => (
-                  <button
-                    key={v.name}
-                    onClick={() => selectVendor(v.name)}
-                    className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                      selectedVendor === v.name
-                        ? 'bg-enbridge-black text-white'
-                        : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)]'
-                    }`}
+                  All jobs
+                </FilterPill>
+                {data.jobs.map((job) => (
+                  <FilterPill
+                    key={job}
+                    active={jobFilter === job}
+                    mono
+                    onClick={() => setParam('job', job)}
                   >
-                    {v.name}
-                    <span
-                      className={`ml-1.5 tabular text-[0.65rem] ${
-                        selectedVendor === v.name
-                          ? 'text-white/70'
-                          : 'text-[var(--text-muted)]'
-                      }`}
-                    >
-                      {v.poCount}
-                    </span>
-                  </button>
+                    {job}
+                  </FilterPill>
                 ))}
-              </>
+              </FilterRow>
             )}
           </div>
         </Card>
 
-        {selectedVendor && (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatTile
-                label="Tickets Issued"
-                value={String(totals.total)}
-                sub={`across ${vendorPos.length} PO${vendorPos.length === 1 ? '' : 's'} · ${formatMoney(totals.totalValue)}`}
-              />
-              <StatTile
-                label="Approved by Enbridge"
-                value={String(totals.approved)}
-                sub={`${totals.pctApproved}% approved & billable`}
-                tone="under"
-              />
-              <StatTile
-                label="Not Yet Approved"
-                value={String(totals.pending)}
-                sub="pending / awaiting sign-off"
-                tone="warn"
-              />
-              <StatTile
-                label="Value at Risk"
-                value={formatMoney(totals.valueAtRisk)}
-                sub="not yet billable"
-                tone="over"
-                emphasis
-              />
-            </div>
-
-            <div className="space-y-4">
-              {vendorPos.length === 0 ? (
-                <Card>
-                  <EmptyState
-                    title="No POs on file for this vendor."
-                    hint="Add one from the Purchase Orders page and it will appear here."
-                  />
-                </Card>
-              ) : (
-                vendorPos.map((po) => {
-                  const poTickets = ticketsByPo.get(po.id) ?? [];
-                  const poApproved = poTickets.filter(
-                    (t) => t.status === 'invoiced'
-                  ).length;
-                  const poTotal = poTickets.length;
-                  const poValue = poTickets.reduce(
-                    (s, t) => s + t.face_value,
-                    0
-                  );
-                  const pctApp =
-                    poTotal > 0
-                      ? Math.round((poApproved / poTotal) * 100)
-                      : null;
-                  return (
-                    <PoCard
-                      key={po.id}
-                      po={po}
-                      tickets={poTickets}
-                      poApproved={poApproved}
-                      poTotal={poTotal}
-                      poValue={poValue}
-                      pctApp={pctApp}
-                    />
-                  );
-                })
-              )}
-            </div>
-          </>
-        )}
-
-        {!selectedVendor && vendorList.length > 0 && (
+        {/* Per-PO cards (§3.4) */}
+        {visiblePos.length === 0 ? (
           <Card>
             <EmptyState
-              title="Pick a vendor above."
-              hint="Every field ticket for that vendor will appear grouped by PO."
+              title="No tickets match the current filter."
+              hint="Clear the filters above to see every PO card."
             />
           </Card>
+        ) : (
+          <div className="space-y-4">
+            {visiblePos.map((po) => (
+              <PoCard key={po.id} po={po} />
+            ))}
+          </div>
         )}
+
+        {/* Footer note (§3.7) */}
+        <p className="text-xs text-[var(--text-muted)] leading-relaxed max-w-3xl">
+          Green tickets are <span className="text-[var(--under)] font-medium">Approved by Client/PM</span>
+          {' '}and can be billed. Red tickets are not yet approved — sent to the client, on hold, or with no row in the export — and represent{' '}
+          <span className="font-semibold text-[var(--over)]">
+            {formatMoney(data.totals.value_at_risk)}
+          </span>{' '}
+          that cannot be invoiced until approval lands. Source: client Aimsio &ldquo;Office Approval Status&rdquo; export.
+        </p>
+          </div>
+        </PageContainer>
       </div>
-    </PageContainer>
+      <PrintUnapproved data={data} />
+    </>
   );
 }
 
-function PoCard({
-  po,
-  tickets,
-  poApproved,
-  poTotal,
-  poValue,
-  pctApp,
+// -----------------------------------------------------------------------------
+// Legend + filter controls
+// -----------------------------------------------------------------------------
+
+function LegendChip({
+  tone,
+  children,
 }: {
-  po: TicketMapPo;
-  tickets: TicketMapTicket[];
-  poApproved: number;
-  poTotal: number;
-  poValue: number;
-  pctApp: number | null;
+  tone: 'under' | 'over';
+  children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const poPending = poTotal - poApproved;
+  const cls =
+    tone === 'under'
+      ? 'border-[var(--under)] bg-[var(--under-bg)]'
+      : 'border-[var(--over)] bg-[var(--over-bg)]';
+  return (
+    <div className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
+      <span className={`inline-block w-4 h-4 rounded border ${cls}`} />
+      {children}
+    </div>
+  );
+}
+
+function FilterRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold w-16 shrink-0">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function FilterPill({
+  children,
+  active,
+  tone,
+  mono,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  tone?: 'over';
+  mono?: boolean;
+  onClick: () => void;
+}) {
+  const activeCls =
+    tone === 'over'
+      ? 'bg-[var(--over)] text-white border-[var(--over)]'
+      : 'bg-[var(--brand-orange)] text-white border-[var(--brand-orange)]';
+  const idleCls =
+    'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]/40';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+        active ? activeCls : idleCls
+      } ${mono ? 'font-mono' : ''}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// PO card + EWP sub-buckets + chip
+// -----------------------------------------------------------------------------
+
+function PoCard({ po }: { po: MapPo }) {
+  const pctApproved =
+    po.ticket_count > 0
+      ? Math.round((po.approved_count / po.ticket_count) * 100)
+      : 0;
+
   return (
     <Card>
-      <CardHeader
-        title={po.po_number}
-        subtitle={po.scope ?? 'No description'}
-        action={
-          <div className="flex flex-col items-end gap-1 text-xs">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1 text-[var(--under)]">
-                <CheckCircle2 className="h-3.5 w-3.5" /> {poApproved}
-              </span>
-              <span className="inline-flex items-center gap-1 text-[var(--over)]">
-                <XCircle className="h-3.5 w-3.5" /> {poPending}
-              </span>
+      <div className="px-6 py-5 border-b border-[var(--border)]">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Link
+                href={`/tickets?po=${encodeURIComponent(po.po_number)}`}
+                className="font-mono text-sm font-semibold tracking-wide uppercase text-[var(--text)] hover:text-[var(--brand-orange)] hover:underline underline-offset-2 decoration-2 transition-colors"
+              >
+                {po.po_number}
+              </Link>
+              {po.ewp_tracked && (
+                <span
+                  className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-[var(--amber)] text-[var(--text)]"
+                  title="This PO is broken down by EWP on the Ticket Map"
+                >
+                  Tracked by EWP
+                </span>
+              )}
             </div>
-            <div className="tabular text-[10px] text-[var(--text-muted)]">
-              {poTotal} ticket{poTotal === 1 ? '' : 's'} · {formatMoney(poValue)}
-            </div>
-            <div className="tabular text-[10px] text-[var(--text-muted)]">
-              Committed {formatMoney(po.committed_amount)}
-            </div>
+            {po.job_number && (
+              <div className="font-mono text-[10px] text-[var(--text-muted)] mt-0.5">
+                job {po.job_number}
+              </div>
+            )}
+            {po.scope && (
+              <p className="text-sm text-[var(--text)]/85 mt-2 max-w-xl">
+                {po.scope}
+              </p>
+            )}
           </div>
-        }
-      />
 
-      {poTotal > 0 && pctApp !== null && (
-        <div className="px-5 pt-3">
-          <div className="flex h-1.5 overflow-hidden rounded-full bg-[var(--over-bg)]">
-            <div
-              className="bg-[var(--under)] transition-all"
-              style={{ width: `${pctApp}%` }}
-            />
-          </div>
-          <div className="mt-1 text-[0.65rem] text-[var(--text-muted)]">
-            {pctApp}% approved · {poApproved} of {poTotal}
-          </div>
+          {po.ticket_count > 0 && (
+            <div className="flex items-center gap-3 text-xs shrink-0">
+              <span className="inline-flex items-center gap-1 text-[var(--under)] font-medium tabular">
+                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+                {po.approved_count}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[var(--over)] font-medium tabular">
+                <XCircle className="h-3.5 w-3.5" strokeWidth={2.5} />
+                {po.not_approved_count}
+              </span>
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="px-5 py-4">
-        {tickets.length === 0 ? (
-          <div className="text-xs text-[var(--text-muted)] italic">
+        {po.ticket_count > 0 && (
+          <div className="mt-4">
+            <div className="flex h-1.5 overflow-hidden rounded-full border border-[var(--over)]/40 bg-[var(--over-bg)]">
+              <div
+                className="h-full bg-[var(--under)]"
+                style={{ width: `${pctApproved}%` }}
+              />
+            </div>
+            <div className="mt-1.5 text-[11px] text-[var(--text-muted)] tabular">
+              {pctApproved}% approved · {po.ticket_count} ticket
+              {po.ticket_count === 1 ? '' : 's'}
+              {po.value_at_risk > 0 && (
+                <>
+                  {' · '}
+                  <span className="text-[var(--over)] font-medium">
+                    {formatMoney(po.value_at_risk)} at risk
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="px-6 py-5">
+        {po.tickets.length === 0 ? (
+          <p className="text-xs italic text-[var(--text-muted)]">
             No tickets on file yet.
+          </p>
+        ) : po.is_ewp_broken_down ? (
+          <div className="space-y-3">
+            {bucketTicketsByEwp(po.tickets).map((bucket) => (
+              <EwpBucket
+                key={bucket.ewp_no ?? 'unassigned'}
+                bucket={bucket}
+              />
+            ))}
           </div>
         ) : (
           <div className="flex flex-wrap gap-1.5">
-            {tickets.map((t) => (
-              <TicketChip
-                key={t.id}
-                ticket={t}
-                onClick={() =>
-                  router.push(
-                    `/tickets?po=${encodeURIComponent(po.po_number)}#${encodeURIComponent(t.ticket_number)}`
-                  )
-                }
-              />
+            {po.tickets.map((t) => (
+              <TicketChip key={t.id} ticket={t} />
             ))}
           </div>
         )}
@@ -303,28 +398,68 @@ function PoCard({
   );
 }
 
-function TicketChip({
-  ticket,
-  onClick,
-}: {
-  ticket: TicketMapTicket;
-  onClick: () => void;
-}) {
-  const cls: Record<Status, string> = {
-    invoiced:
-      'border-[var(--under)] bg-[var(--under-bg)] text-[var(--under)] hover:brightness-95',
-    pending:
-      'border-[var(--over)] bg-[var(--over-bg)] text-[var(--over)] hover:brightness-95',
-    rejected:
-      'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]',
-  };
+function EwpBucket({ bucket }: { bucket: MapEwpBucket }) {
+  const unassigned = bucket.ewp_no == null;
+  const leftBorderCls = unassigned
+    ? 'border-l-[var(--warn)]'
+    : 'border-l-[var(--amber)]';
+  const outerBorderCls = unassigned
+    ? 'border-[var(--warn)]/30'
+    : 'border-[var(--border)]';
+
   return (
-    <button
-      onClick={onClick}
-      title={`${ticket.ticket_number} · ${ticket.ticket_date} · ${formatMoney(ticket.face_value)} · ${ticket.status}`}
-      className={`tabular rounded border px-1.5 py-1 text-[0.7rem] font-medium ${cls[ticket.status]}`}
+    <div
+      className={`rounded-md border ${outerBorderCls} bg-[var(--surface)] overflow-hidden`}
     >
-      {ticket.ticket_number}
-    </button>
+      <div
+        className={`flex items-center justify-between gap-3 px-4 py-2.5 border-l-4 ${leftBorderCls} border-b border-b-[var(--border)]`}
+      >
+        <div className="min-w-0">
+          {unassigned ? (
+            <span className="font-semibold text-sm text-[var(--warn)]">
+              Unassigned to EWP
+            </span>
+          ) : (
+            <>
+              <span className="font-semibold text-sm text-[var(--text)]">
+                EWP #{bucket.ewp_no}
+              </span>
+              <span className="ml-2 text-xs text-[var(--text-muted)]">
+                {bucket.title}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="text-xs tabular text-[var(--text-muted)] shrink-0">
+          {bucket.count} · {formatMoney(bucket.sum_billable)}
+        </div>
+      </div>
+      {unassigned && (
+        <div className="px-4 pt-2.5 text-[11px] text-[var(--warn)] font-medium">
+          ⚠ No WTP number yet.
+        </div>
+      )}
+      <div className="px-4 py-3 flex flex-wrap gap-1.5">
+        {bucket.tickets.map((t) => (
+          <TicketChip key={t.id} ticket={t} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TicketChip({ ticket }: { ticket: MapTicket }) {
+  const cls = ticket.approved
+    ? 'border-[var(--under)] bg-[var(--under-bg)] text-[var(--under)]'
+    : 'border-[var(--over)] bg-[var(--over-bg)] text-[var(--over)]';
+  const approvalNote = ticket.approval_status ?? 'no approval record';
+  const title = `${ticket.ticket_number} · ${ticket.ticket_date} · ${formatMoney(ticket.face_value)} · ${approvalNote}`;
+  return (
+    <span
+      title={title}
+      className={`tabular rounded border px-1.5 py-1 text-[0.7rem] font-medium ${cls}`}
+    >
+      {ticket.ticket_number_short}
+    </span>
   );
 }

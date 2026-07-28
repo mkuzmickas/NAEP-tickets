@@ -16,7 +16,12 @@ export type ServicePO = {
 };
 
 export type TicketStatus = 'pending' | 'invoiced' | 'rejected';
-export type TicketSourceType = 'field_ticket' | 'bol' | 'invoice' | 'master_ticket';
+export type TicketSourceType =
+  | 'field_ticket'
+  | 'bol'
+  | 'invoice'
+  | 'master_ticket'
+  | 'aimsio_status';
 export type LineItemCategory = 'labour' | 'equipment' | 'materials' | 'loa_other';
 
 export type Ticket = {
@@ -30,6 +35,16 @@ export type Ticket = {
   computed_total: number;
   reconciled: boolean;
   status: TicketStatus;
+  /** Client-side approval string from the Aimsio "Office Approval Status"
+   *  column, verbatim. `Approved by Client/PM` = green on the Ticket Map;
+   *  everything else (Sent to Client via Portal, Approved to Send, See Notes,
+   *  blank, null) = red. Distinct from `status`, which is the internal
+   *  invoicing state. */
+  approval_status: string | null;
+  /** EWP this ticket rolls up to. Populated for tickets on PO 2001285 (per
+   *  the WTP-code map) and PO 2001271 (whole PO = EWP 11). Null on every
+   *  other PO and on 2001285 tickets that haven't been coded yet. */
+  ewp_no: number | null;
   pdf_storage_path: string | null;
   markup_notes: string | null;
   schedule_package_id: string | null;
