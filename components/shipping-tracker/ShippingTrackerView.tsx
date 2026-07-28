@@ -254,15 +254,36 @@ function AssignPackageModal({
     permits_cost: '',
   });
 
-  const grouped = useMemo(() => {
-    const m = new Map<string, TrackerPackage[]>();
-    for (const p of packages) {
-      const arr = m.get(p.ewp) ?? [];
-      arr.push(p);
-      m.set(p.ewp, arr);
-    }
-    return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [packages]);
+  const [pickSearch, setPickSearch] = useState('');
+
+  const sortedFiltered = useMemo(() => {
+    const q = pickSearch.trim().toLowerCase();
+    // Sort by planned_ship_date ascending, nulls last, tie-break by tag.
+    const sorted = [...packages].sort((a, b) => {
+      const aDate = a.planned_ship_date ?? '9999-99-99';
+      const bDate = b.planned_ship_date ?? '9999-99-99';
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+      return a.tag.localeCompare(b.tag);
+    });
+    if (!q) return sorted;
+    return sorted.filter(
+      (p) =>
+        p.tag.toLowerCase().includes(q) ||
+        p.ewp.toLowerCase().includes(q) ||
+        (p.planned_ship_date ?? '').toLowerCase().includes(q)
+    );
+  }, [packages, pickSearch]);
+
+  function formatShipDate(iso: string | null): string {
+    if (!iso) return 'No ship date';
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: '2-digit',
+    });
+  }
 
   async function assignTo(pkgId: string) {
     setSaving(true);
@@ -361,33 +382,59 @@ function AssignPackageModal({
           </div>
 
           {mode === 'pick' ? (
-            <div className="max-h-[400px] overflow-y-auto space-y-4">
-              {grouped.map(([ewp, pkgs]) => (
-                <div key={ewp}>
-                  <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold mb-1.5">
-                    {ewp}
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={pickSearch}
+                onChange={(e) => setPickSearch(e.target.value)}
+                placeholder="Search by package, EWP, or ship date"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--text)]"
+                autoFocus
+              />
+              <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
+                {sortedFiltered.length} package{sortedFiltered.length === 1 ? '' : 's'} · sorted by ship date
+              </div>
+              <div className="max-h-[380px] overflow-y-auto space-y-1">
+                {sortedFiltered.length === 0 ? (
+                  <div className="text-sm text-[var(--text-muted)] italic py-6 text-center">
+                    No packages match that search.
                   </div>
-                  <div className="space-y-1">
-                    {pkgs.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => setSelected(p.id)}
-                        disabled={saving}
-                        className={`w-full text-left px-3 py-2 rounded border text-sm ${
-                          selected === p.id
-                            ? 'border-[var(--text)] bg-[var(--surface-2)]'
-                            : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
-                        }`}
-                      >
-                        <div className="font-medium">{p.tag}</div>
-                        <div className="text-[10px] text-[var(--text-muted)] tabular">
-                          Budget {formatMoney(p.budget_total)} · Actual {formatMoney(p.actual)} · {p.ticket_count} ticket{p.ticket_count === 1 ? '' : 's'}
+                ) : (
+                  sortedFiltered.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelected(p.id)}
+                      disabled={saving}
+                      className={`w-full text-left px-3 py-2 rounded border text-sm ${
+                        selected === p.id
+                          ? 'border-[var(--text)] bg-[var(--surface-2)]'
+                          : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
+                      }`}
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium truncate">{p.tag}</div>
+                          <div className="text-[10px] text-[var(--text-muted)] truncate">
+                            {p.ewp}
+                          </div>
                         </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                        <div
+                          className={`shrink-0 tabular text-xs font-semibold whitespace-nowrap ${
+                            p.planned_ship_date
+                              ? 'text-[var(--text)]'
+                              : 'text-[var(--text-muted)]/60'
+                          }`}
+                        >
+                          {formatShipDate(p.planned_ship_date)}
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-[var(--text-muted)] tabular mt-1">
+                        Budget {formatMoney(p.budget_total)} · Actual {formatMoney(p.actual)} · {p.ticket_count} ticket{p.ticket_count === 1 ? '' : 's'}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
