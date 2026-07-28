@@ -15,6 +15,11 @@ const PAD = { top: 22, right: 32, bottom: 52, left: 78 };
 const CW = W - PAD.left - PAD.right;
 const CH = H - PAD.top - PAD.bottom;
 
+// Temporary cap so the near-term ship period reads clearly instead of the
+// axis being dragged out to Q1 2027+. Remove when the whole schedule needs
+// to be visible again.
+const X_CUTOFF = new Date(2026, 11, 31); // Dec 31, 2026
+
 type Series = { date: Date; cumulative: number }[];
 
 function buildSeries(points: TrendPoint[]): Series {
@@ -66,8 +71,19 @@ export function ShippingTrendChart({
     actual: number | null;
   } | null>(null);
 
-  const forecastSeries = useMemo(() => buildSeries(forecast), [forecast]);
-  const actualSeries = useMemo(() => buildSeries(actual), [actual]);
+  // Trim inputs to the visible window so the cumulative lines only reflect
+  // the portion of the schedule inside the chart's date range.
+  const visibleForecast = useMemo(
+    () => forecast.filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF),
+    [forecast]
+  );
+  const visibleActual = useMemo(
+    () => actual.filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF),
+    [actual]
+  );
+
+  const forecastSeries = useMemo(() => buildSeries(visibleForecast), [visibleForecast]);
+  const actualSeries = useMemo(() => buildSeries(visibleActual), [visibleActual]);
 
   if (forecastSeries.length === 0 && actualSeries.length === 0) {
     return (
@@ -86,12 +102,15 @@ export function ShippingTrendChart({
   const allDates: Date[] = [];
   for (const p of forecastSeries) allDates.push(p.date);
   for (const p of actualSeries) allDates.push(p.date);
-  const minDate = new Date(Math.min(...allDates.map((d) => d.getTime())));
-  const maxDate = new Date(Math.max(...allDates.map((d) => d.getTime())));
-  // pad the range slightly on either side so the endpoints don't sit on the axis
-  const padMs = (maxDate.getTime() - minDate.getTime()) * 0.03 || 1000 * 60 * 60 * 24 * 3;
+  const minDate =
+    allDates.length > 0
+      ? new Date(Math.min(...allDates.map((d) => d.getTime())))
+      : new Date(2026, 5, 1); // reasonable fallback if nothing in range yet
+  // Left edge: small pad before the earliest data point; right edge is fixed
+  // at the cutoff so the last 6 months read granularly.
+  const padMs = 3 * 24 * 60 * 60 * 1000; // 3 days
   const start = new Date(minDate.getTime() - padMs);
-  const end = new Date(maxDate.getTime() + padMs);
+  const end = X_CUTOFF;
   const totalMs = end.getTime() - start.getTime();
 
   const maxCum = Math.max(
