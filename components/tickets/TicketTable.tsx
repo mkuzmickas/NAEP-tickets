@@ -123,6 +123,8 @@ export function TicketTable({
   const [deleting, setDeleting] = useState<TicketRow | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'error'>('idle');
   const [deleteError, setDeleteError] = useState('');
+  const [zipping, setZipping] = useState<{ done: number; total: number } | null>(null);
+  const [zipError, setZipError] = useState('');
 
   const poOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -215,6 +217,78 @@ export function TicketTable({
     const filename = `NAEP_tickets_${scope}_${today}.csv`;
     downloadCsv(filename, buildCsv(filtered));
   }
+
+  async function handleDownloadZip() {
+    const withPdf = filtered.filter((t) => t.pdf_storage_path);
+    if (withPdf.length === 0) return;
+
+    setZipError('');
+    setZipping({ done: 0, total: withPdf.length });
+
+    try {
+      const supabase = createClient();
+      const { default: JSZip } = await import('jszip');
+      const zip = new JSZip();
+
+      // Sequential downloads so we can show accurate progress and don't hammer
+      // Supabase Storage with dozens of parallel requests. For 20-30 PDFs this
+      // takes a few seconds — well within a normal wait.
+      for (let i = 0; i < withPdf.length; i++) {
+        const t = withPdf[i];
+        if (!t.pdf_storage_path) continue;
+
+        const { data: signed, error: signErr } = await supabase.storage
+          .from('ticket-pdfs')
+          .createSignedUrl(t.pdf_storage_path, 300);
+        if (signErr || !signed) {
+          throw new Error(
+            `Failed to sign URL for ${t.ticket_number}: ${signErr?.message ?? 'unknown'}`
+          );
+        }
+
+        const res = await fetch(signed.signedUrl);
+        if (!res.ok) {
+          throw new Error(
+            `Failed to fetch PDF for ${t.ticket_number} (${res.status})`
+          );
+        }
+        const blob = await res.blob();
+
+        const safeTicketNumber = safeFilenamePart(t.ticket_number);
+        const safePo = safeFilenamePart(t.po_number);
+        const filename = `${safePo}/${t.ticket_date}_${safeTicketNumber}.pdf`;
+        zip.file(filename, blob);
+
+        setZipping({ done: i + 1, total: withPdf.length });
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const scope = activeVendor
+        ? `${safeFilenamePart(activeVendor.vendor_display_name)}_${safeFilenamePart(activeVendor.po_number)}`
+        : 'all-tickets';
+      const zipName = `NAEP_tickets_${scope}_${today}.zip`;
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = zipName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setZipError(msg);
+    } finally {
+      setZipping(null);
+    }
+  }
+
+  const filteredWithPdf = useMemo(
+    () => filtered.filter((t) => t.pdf_storage_path).length,
+    [filtered]
+  );
 
   return (
     <div className="space-y-4">
@@ -309,8 +383,35 @@ export function TicketTable({
               <span>Export to Excel</span>
               <span className="text-enbridge-black/50">({filtered.length})</span>
             </button>
+            <button
+              onClick={handleDownloadZip}
+              disabled={filteredWithPdf === 0 || zipping !== null}
+              title={
+                filteredWithPdf === 0
+                  ? 'No filtered tickets have PDFs on file'
+                  : `Bundle every PDF for the ${filteredWithPdf} filtered ticket${filteredWithPdf === 1 ? '' : 's'} into a ZIP`
+              }
+              className="text-xs px-3 py-1.5 border border-black/20 rounded bg-white hover:bg-enbridge-paper disabled:opacity-50 font-medium inline-flex items-center gap-1.5"
+            >
+              <span>📦</span>
+              {zipping ? (
+                <span>
+                  Zipping {zipping.done}/{zipping.total}…
+                </span>
+              ) : (
+                <>
+                  <span>Download PDFs</span>
+                  <span className="text-enbridge-black/50">({filteredWithPdf})</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
+        {zipError && (
+          <div className="px-5 py-2 border-b border-black/10 text-xs text-red-700 bg-red-50">
+            ZIP download failed: {zipError}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-enbridge-paper text-enbridge-black/70">
