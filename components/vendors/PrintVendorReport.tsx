@@ -121,41 +121,51 @@ function ReportHeader({
     <header
       style={{
         borderBottom: '2px solid #d04e00',
-        paddingBottom: 12,
-        marginBottom: 16,
+        paddingBottom: 8,
+        marginBottom: 10,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        gap: 12,
       }}
     >
+      <div>
+        <div
+          style={{
+            fontSize: 8,
+            textTransform: 'uppercase',
+            letterSpacing: '0.12em',
+            color: '#777',
+            fontWeight: 600,
+            marginBottom: 2,
+          }}
+        >
+          Vendor Snapshot
+        </div>
+        <h1
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            margin: 0,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {vendorDisplayName}
+        </h1>
+        <p style={{ margin: '2px 0 0', fontSize: 9, color: '#555' }}>
+          {vendorLegalName} · {PROJECT_LINE}
+        </p>
+      </div>
       <div
         style={{
           fontSize: 9,
-          textTransform: 'uppercase',
-          letterSpacing: '0.12em',
-          color: '#777',
-          fontWeight: 600,
-          marginBottom: 4,
+          color: '#555',
+          textAlign: 'right',
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
-        Vendor Snapshot
-      </div>
-      <h1
-        style={{
-          fontSize: 22,
-          fontWeight: 700,
-          margin: 0,
-          letterSpacing: '-0.01em',
-        }}
-      >
-        {vendorDisplayName}
-      </h1>
-      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#555' }}>
-        {vendorLegalName}
-      </p>
-      <p style={{ margin: '2px 0 0', fontSize: 10, color: '#555' }}>
-        {PROJECT_LINE}
-      </p>
-      <p style={{ margin: '2px 0 0', fontSize: 10, color: '#555' }}>
         Generated {generated}
-      </p>
+      </div>
     </header>
   );
 }
@@ -250,12 +260,12 @@ function KpiCell({
       style={{
         border: '1px solid #ddd',
         borderRadius: 4,
-        padding: '8px 10px',
+        padding: '5px 8px',
       }}
     >
       <div
         style={{
-          fontSize: 7.5,
+          fontSize: 7,
           textTransform: 'uppercase',
           letterSpacing: '0.09em',
           color: '#666',
@@ -266,9 +276,9 @@ function KpiCell({
       </div>
       <div
         style={{
-          fontSize: 15,
+          fontSize: 13,
           fontWeight: 700,
-          marginTop: 3,
+          marginTop: 1,
           color: valueColor,
           fontVariantNumeric: 'tabular-nums',
           letterSpacing: '-0.01em',
@@ -278,9 +288,9 @@ function KpiCell({
       </div>
       <div
         style={{
-          fontSize: 8.5,
+          fontSize: 8,
           color: '#666',
-          marginTop: 2,
+          marginTop: 1,
           fontVariantNumeric: 'tabular-nums',
         }}
       >
@@ -297,24 +307,24 @@ function PoReportSection({ po }: { po: PoWithTickets }) {
   const pctApp = total > 0 ? Math.round((approved / total) * 100) : 0;
   const pctUsed = po.committed > 0 ? (po.lem / po.committed) * 100 : 0;
   const remaining = po.committed - po.lem;
-  const facDisplay =
-    po.forecast != null ? formatMoney(po.forecast) : '—';
+  const facDisplay = po.forecast != null ? formatMoney(po.forecast) : '—';
 
   return (
     <section
       className="print-po-section"
       style={{
-        marginTop: 18,
+        marginTop: 10,
         border: '1px solid #ddd',
         borderRadius: 4,
         overflow: 'hidden',
       }}
     >
+      {/* Header: PO number + job ref + scope + right-aligned meta */}
       <div
         style={{
-          borderBottom: '1.5px solid #131417',
-          padding: '8px 12px',
-          background: '#f5f5f5',
+          borderBottom: '1px solid #131417',
+          padding: '6px 10px',
+          background: '#f7f7f7',
         }}
       >
         <div
@@ -329,7 +339,7 @@ function PoReportSection({ po }: { po: PoWithTickets }) {
             <span
               style={{
                 fontFamily: 'ui-monospace, monospace',
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
               }}
@@ -340,9 +350,9 @@ function PoReportSection({ po }: { po: PoWithTickets }) {
               <span
                 style={{
                   fontFamily: 'ui-monospace, monospace',
-                  fontSize: 9,
-                  marginLeft: 8,
-                  padding: '1px 5px',
+                  fontSize: 8.5,
+                  marginLeft: 6,
+                  padding: '0px 4px',
                   border: '1px solid #999',
                   borderRadius: 3,
                   color: '#555',
@@ -355,8 +365,8 @@ function PoReportSection({ po }: { po: PoWithTickets }) {
               <span
                 style={{
                   fontFamily: 'ui-monospace, monospace',
-                  fontSize: 9,
-                  marginLeft: 8,
+                  fontSize: 8.5,
+                  marginLeft: 6,
                   color: '#777',
                 }}
               >
@@ -366,23 +376,22 @@ function PoReportSection({ po }: { po: PoWithTickets }) {
           </div>
           <div
             style={{
-              fontSize: 10,
+              fontSize: 9,
               color: '#333',
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {total} ticket{total === 1 ? '' : 's'} · {pctApp}% approved ·{' '}
-            {pctUsed.toFixed(1)}% burn
+            {total} ticket{total === 1 ? '' : 's'} · {approved} approved / {pending} pending · {pctUsed.toFixed(1)}% burn
           </div>
         </div>
         {po.scope && (
-          <p style={{ margin: '4px 0 0', fontSize: 10, color: '#333' }}>
+          <p style={{ margin: '2px 0 0', fontSize: 9, color: '#333' }}>
             {po.scope}
           </p>
         )}
       </div>
 
-      {/* Money strip */}
+      {/* Money strip — tighter than before */}
       <div
         style={{
           display: 'grid',
@@ -401,72 +410,93 @@ function PoReportSection({ po }: { po: PoWithTickets }) {
         />
       </div>
 
-      {/* Ticket table */}
-      {total === 0 ? (
-        <p
-          style={{
-            padding: '10px 12px',
-            fontStyle: 'italic',
-            color: '#666',
-            margin: 0,
-            fontSize: 10,
-          }}
-        >
-          No tickets on file yet.
-        </p>
-      ) : (
-        <table
-          style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: 10,
-          }}
-        >
-          <thead>
-            <tr>
-              <ReportTh>Ticket #</ReportTh>
-              <ReportTh>Date</ReportTh>
-              <ReportTh>Status</ReportTh>
-              <ReportTh right>Value</ReportTh>
-            </tr>
-          </thead>
-          <tbody>
-            {po.tickets.map((t) => (
-              <TicketRow key={t.id} ticket={t} />
-            ))}
-            <tr>
-              <td
-                colSpan={3}
-                style={{
-                  paddingTop: 5,
-                  paddingRight: 8,
-                  textAlign: 'right',
-                  fontWeight: 600,
-                  fontSize: 10,
-                  borderTop: '1px solid #aaa',
-                }}
-              >
-                Subtotal · {approved} approved / {pending} pending
-              </td>
-              <td
-                style={{
-                  paddingTop: 5,
-                  paddingLeft: 8,
-                  paddingRight: 12,
-                  textAlign: 'right',
-                  fontWeight: 700,
-                  fontFamily: 'ui-monospace, monospace',
-                  fontVariantNumeric: 'tabular-nums',
-                  borderTop: '1px solid #aaa',
-                }}
-              >
-                {formatMoney(po.lem)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Approval progress bar (thin) — mirrors the on-screen bar */}
+      {total > 0 && (
+        <div style={{ padding: '5px 10px 2px', background: '#fafafa' }}>
+          <div
+            style={{
+              height: 3,
+              background: '#fce7ed',
+              border: '1px solid #f0b4bd',
+              borderRadius: 999,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${pctApp}%`,
+                height: '100%',
+                background: '#1f8a4c',
+              }}
+            />
+          </div>
+          <div
+            style={{
+              marginTop: 2,
+              fontSize: 8,
+              color: '#666',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {pctApp}% approved · {formatMoney(po.lem)} logged
+          </div>
+        </div>
       )}
+
+      {/* Ticket chip grid — mirrors on-screen VendorPoCard layout */}
+      <div style={{ padding: '6px 10px 8px' }}>
+        {total === 0 ? (
+          <p
+            style={{
+              margin: 0,
+              fontStyle: 'italic',
+              color: '#666',
+              fontSize: 9,
+            }}
+          >
+            No tickets on file yet.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 3,
+            }}
+          >
+            {po.tickets.map((t) => (
+              <TicketChip key={t.id} ticket={t} />
+            ))}
+          </div>
+        )}
+      </div>
     </section>
+  );
+}
+
+function TicketChip({ ticket }: { ticket: TicketBrief }) {
+  const approved = ticket.status === 'invoiced';
+  const color = approved ? '#1f8a4c' : '#d8442f';
+  const bg = approved ? '#e8f5ed' : '#fdecea';
+  const title = `${ticket.ticket_number} · ${formatTicketDate(ticket.ticket_date)} · ${formatMoney(ticket.face_value)} · ${approved ? 'Approved' : 'Pending'}`;
+  return (
+    <span
+      title={title}
+      style={{
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: 8,
+        fontWeight: 500,
+        color,
+        background: bg,
+        border: `1px solid ${color}`,
+        borderRadius: 3,
+        padding: '1px 4px',
+        fontVariantNumeric: 'tabular-nums',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {ticket.ticket_number}
+    </span>
   );
 }
 
@@ -484,13 +514,13 @@ function MoneyBlock({
   return (
     <div
       style={{
-        padding: '8px 12px',
+        padding: '5px 10px',
         borderRight: '1px solid #eee',
       }}
     >
       <div
         style={{
-          fontSize: 7.5,
+          fontSize: 7,
           textTransform: 'uppercase',
           letterSpacing: '0.09em',
           color: '#666',
@@ -501,9 +531,9 @@ function MoneyBlock({
       </div>
       <div
         style={{
-          fontSize: 13,
+          fontSize: 11.5,
           fontWeight: 700,
-          marginTop: 2,
+          marginTop: 1,
           color,
           fontVariantNumeric: 'tabular-nums',
           letterSpacing: '-0.01em',
@@ -515,81 +545,3 @@ function MoneyBlock({
   );
 }
 
-function TicketRow({ ticket }: { ticket: TicketBrief }) {
-  const approved = ticket.status === 'invoiced';
-  const statusColor = approved ? '#1f8a4c' : '#d8442f';
-  const statusLabel = approved ? 'Approved' : 'Pending';
-  return (
-    <tr>
-      <ReportTd mono>{ticket.ticket_number}</ReportTd>
-      <ReportTd>{formatTicketDate(ticket.ticket_date)}</ReportTd>
-      <ReportTd>
-        <span
-          style={{
-            border: `1px solid ${statusColor}`,
-            color: statusColor,
-            padding: '1px 5px',
-            borderRadius: 3,
-            fontSize: 9,
-            fontWeight: 500,
-          }}
-        >
-          {statusLabel}
-        </span>
-      </ReportTd>
-      <ReportTd right mono>
-        {formatMoney(ticket.face_value)}
-      </ReportTd>
-    </tr>
-  );
-}
-
-function ReportTh({
-  children,
-  right,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-}) {
-  return (
-    <th
-      style={{
-        textAlign: right ? 'right' : 'left',
-        fontSize: 8,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        color: '#555',
-        fontWeight: 600,
-        padding: '5px 12px',
-        background: '#fafafa',
-        borderBottom: '1px solid #ccc',
-      }}
-    >
-      {children}
-    </th>
-  );
-}
-
-function ReportTd({
-  children,
-  right,
-  mono,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <td
-      style={{
-        textAlign: right ? 'right' : 'left',
-        padding: '4px 12px',
-        borderBottom: '1px solid #eee',
-        fontFamily: mono ? 'ui-monospace, monospace' : 'inherit',
-        fontVariantNumeric: mono || right ? 'tabular-nums' : 'normal',
-      }}
-    >
-      {children}
-    </td>
-  );
-}

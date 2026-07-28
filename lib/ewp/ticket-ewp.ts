@@ -14,6 +14,10 @@
 // Appendix A — PO 2001285 ticket → EWP (current). Keys are the base ticket
 // number as written on the Aimsio CSV, with any leading date prefix stripped
 // (e.g. `06-05-SL26-101-000-001` collapses to `SL26-101-000-001`).
+//
+// Tickets whose line items span more than one EWP live in TICKET_EWP_MULTIPLE
+// below instead of getting a single number here — the Ticket Map renders
+// those in a dedicated Multiple EWPs bucket.
 export const TICKET_EWP: Record<string, number> = {
   'SL26-101-000-001': 8,
   'SL26-101-000-002': 8,
@@ -50,13 +54,34 @@ export const TICKET_EWP: Record<string, number> = {
   'SL26-101-000-033': 8,
   'SL26-101-000-034': 8,
   'SL26-101-000-035': 4,
-  'SL26-101-000-036': 22,
+  'SL26-101-000-036': 5, // corrected from 22 per SureLine's latest EWP coding sheet
   'SL26-101-000-037': 13,
   'SL26-101-000-038': 5,
-  'SL26-101-000-039': 8,
+  // 039 lives in TICKET_EWP_MULTIPLE — line items span EWPs 13 + 8.
   'SL26-101-000-040': 12,
   'SL26-101-000-041': 13,
+  // Newly coded tickets from SureLine's July 2026 EWP coding sheet.
+  'SL26-101-000-049': 13,
+  'SL26-101-000-050': 5,
+  'SL26-101-000-051': 8,
+  'SL26-101-000-052': 8,
+  'SL26-101-000-056': 8,
+  'SL26-101-000-057': 18,
+  'SL26-101-000-058': 13,
+  'SL26-101-000-059': 8,
+  'SL26-101-000-060': 18,
+  'SL26-101-000-063': 8,
+  // 061 lives in TICKET_EWP_MULTIPLE — line items span EWPs 13 + 14 + 4.
 };
+
+// Tickets whose line items span more than one EWP — the Ticket Map routes
+// these into a dedicated "Multiple EWPs" bucket instead of forcing one
+// number. Extend the set as new mixed tickets appear on SureLine's coding
+// sheet.
+export const TICKET_EWP_MULTIPLE: Set<string> = new Set([
+  'SL26-101-000-039',
+  'SL26-101-000-061',
+]);
 
 // Appendix B — EWP titles. Used both by the 2001285 sub-bucket headers and
 // anywhere else in the UI that renders an EWP number in isolation.
@@ -118,7 +143,8 @@ export function poFromCsvFilename(filename: string): string | null {
 // Apply the two EWP rules from spec §2.3:
 //   1. Whole-PO rule: every ticket on PUR-6540-2001271 is EWP 11.
 //   2. Per-ticket map for PUR-6540-2001285: look up in TICKET_EWP; null if
-//      the WTP code hasn't been assigned yet.
+//      the WTP code hasn't been assigned yet OR if the ticket spans
+//      multiple EWPs (TICKET_EWP_MULTIPLE handles that separately).
 //   Every other PO returns null (not broken down by EWP).
 export function ewpForTicket(
   poNumber: string,
@@ -129,6 +155,17 @@ export function ewpForTicket(
     return TICKET_EWP[stripDatePrefix(ticketNumber)] ?? null;
   }
   return null;
+}
+
+// Whether a ticket is coded as spanning multiple EWPs. Only meaningful on
+// PUR-6540-2001285 (the only PO the Ticket Map breaks down by EWP right
+// now); returns false for tickets on any other PO regardless.
+export function isMultipleEwpTicket(
+  poNumber: string,
+  ticketNumber: string
+): boolean {
+  if (poNumber !== 'PUR-6540-2001285') return false;
+  return TICKET_EWP_MULTIPLE.has(stripDatePrefix(ticketNumber));
 }
 
 // Every EWP number this project cares about, sorted ascending, for building
