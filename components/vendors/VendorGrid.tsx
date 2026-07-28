@@ -36,6 +36,17 @@ function accentFor(name: string) {
   return ACCENT_PALETTE[h % ACCENT_PALETTE.length];
 }
 
+function formatUpdatedAs(iso: string | null): string {
+  if (!iso) return 'no tickets yet';
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 function initials(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length === 0) return '?';
@@ -168,6 +179,9 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
             {vendor.vendor_display_name}
           </h3>
           <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">
+            Updated as of {formatUpdatedAs(vendor.last_ticket_date)}
+          </p>
+          <p className="text-[11px] text-[var(--text-muted)]/70 truncate">
             {vendor.vendor_legal_name}
           </p>
         </div>

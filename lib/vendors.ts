@@ -31,6 +31,7 @@ export type VendorSummary = {
   ticket_count: number;
   approved_count: number;
   pending_count: number;
+  last_ticket_date: string | null;
   pos: PoWithTickets[];
 };
 
@@ -129,6 +130,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
         ticket_count: 0,
         approved_count: 0,
         pending_count: 0,
+        last_ticket_date: null,
         pos: [],
       };
       posByVendor.set(p.vendor_display_name, v);
@@ -142,6 +144,11 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     v.total_pending_value += tickets
       .filter((t) => t.status === 'pending')
       .reduce((s, t) => s + t.face_value, 0);
+    for (const t of tickets) {
+      if (!v.last_ticket_date || t.ticket_date > v.last_ticket_date) {
+        v.last_ticket_date = t.ticket_date;
+      }
+    }
     v.pos.push(po);
   }
 
