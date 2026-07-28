@@ -30,6 +30,8 @@ export type TrackerTicket = {
   schedule_package_tag: string | null;
 };
 
+export type TrendPoint = { date: string; value: number };
+
 export type ShippingTrackerData = {
   packages: TrackerPackage[];
   ticketsByPo: {
@@ -38,6 +40,10 @@ export type ShippingTrackerData = {
     vendor_display_name: string;
     tickets: TrackerTicket[];
   }[];
+  trend: {
+    forecast: TrendPoint[]; // point-in-time budget contributions on planned ship dates
+    actual: TrendPoint[]; // point-in-time actual contributions on ticket dates
+  };
 };
 
 type RawPkg = {
@@ -176,5 +182,24 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
     };
   });
 
-  return { packages, ticketsByPo };
+  // Trend series — every dated budget line and every dated ticket, sorted so
+  // the client can cumulative-sum in render.
+  const forecast: TrendPoint[] = ((pkgRows ?? []) as RawPkg[])
+    .filter((r) => r.planned_ship_date)
+    .map((r) => ({
+      date: r.planned_ship_date as string,
+      value: num(r.total_cost) || num(r.shipping_cost) + num(r.permits_cost),
+    }))
+    .filter((p) => p.value > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const actual: TrendPoint[] = ticketRows
+    .map((t) => ({
+      date: t.ticket_date,
+      value: Number(t.face_value),
+    }))
+    .filter((p) => p.value > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return { packages, ticketsByPo, trend: { forecast, actual } };
 }
