@@ -101,11 +101,17 @@ export function ParsePreview({
   filename,
   initialResult,
   onCommit,
+  onApproveInPlace,
   onReject,
 }: {
   filename: string;
   initialResult: ParseResult;
   onCommit: (r: ParseResult, replace?: boolean) => Promise<void>;
+  onApproveInPlace: (
+    existingTicketId: string,
+    storagePath: string,
+    r: ParseResult
+  ) => Promise<void>;
   onReject: () => void;
 }) {
   const [ticket, setTicket] = useState<ParsedTicket>(initialResult.parsed);
@@ -132,6 +138,15 @@ export function ParsePreview({
 
   const isIdenticalDuplicate = !!existingSnapshot && diffs.length === 0;
   const isRevision = !!existingSnapshot && diffs.length > 0;
+  /** When the existing ticket is pending, uploading a signed PDF is the
+   *  typical "approve in place" case — non-destructive, preserves record. */
+  const canApproveInPlace =
+    !!existingSnapshot &&
+    existingSnapshot.status === 'pending' &&
+    reconciled &&
+    !hasBlockingBolDup &&
+    initialResult.po_exists &&
+    !committing;
 
   // BOL collisions where the master_ticket is the same one we're replacing
   // are "self-collisions" — they'll be deleted by the replace operation
@@ -214,6 +229,24 @@ export function ParsePreview({
     }
   }
 
+  async function approveInPlace() {
+    if (!existingSnapshot) return;
+    setCommitting(true);
+    setCommitError('');
+    try {
+      await onApproveInPlace(
+        existingSnapshot.ticket_id,
+        initialResult.storage_path,
+        { ...initialResult, parsed: ticket }
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setCommitError(msg);
+    } finally {
+      setCommitting(false);
+    }
+  }
+
   const showBanners =
     initialResult.warnings.length > 0 ||
     hasTicketDup ||
@@ -258,16 +291,70 @@ export function ParsePreview({
             </Banner>
           )}
 
-          {isIdenticalDuplicate && (
+          {isIdenticalDuplicate && existingSnapshot?.status === 'pending' && (
+            <div className="rounded p-3 bg-green-50 border border-green-200 text-xs text-green-900">
+              <div className="font-medium text-sm">
+                Signed copy of pending ticket #{' '}
+                <span className="font-mono">{ticket.ticket_number}</span>
+              </div>
+              <div className="mt-1 text-green-900/80">
+                Already on file (PO {existingSnapshot.po_number}) with{' '}
+                <strong>identical data</strong> and status{' '}
+                <strong>pending</strong>. Attach this signed PDF as evidence
+                and flip the existing record to <strong>invoiced /
+                approved</strong> — the ticket ID, line items, and history
+                are preserved.
+              </div>
+            </div>
+          )}
+
+          {isIdenticalDuplicate && existingSnapshot?.status !== 'pending' && (
             <Banner level="warn">
               Ticket #{' '}
               <strong className="font-mono">{ticket.ticket_number}</strong> is
-              already on file with <strong>identical data</strong>. True duplicate
-              — nothing to commit. Reject this upload.
+              already on file with <strong>identical data</strong> (status:{' '}
+              {existingSnapshot?.status ?? '—'}). True duplicate — nothing to
+              commit. Reject this upload.
             </Banner>
           )}
 
-          {isRevision && (
+          {isRevision && existingSnapshot?.status === 'pending' && (
+            <div className="rounded p-3 bg-green-50 border border-green-200 text-xs text-green-900">
+              <div className="font-medium text-sm">
+                Signed copy differs from pending record — pick your path
+              </div>
+              <div className="mt-1 text-green-900/80">
+                The existing ticket #{' '}
+                <span className="font-mono">{ticket.ticket_number}</span> is
+                still pending. <strong>Mark as approved</strong> preserves the
+                record and flips status; <strong>Replace</strong> is
+                destructive (deletes and re-inserts with the new data).
+                Review the changes below.
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-green-900/70 border-b border-green-200">
+                      <th className="text-left py-1 pr-2">Field</th>
+                      <th className="text-left py-1 pr-2">On file</th>
+                      <th className="text-left py-1 pl-2">New upload</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diffs.map((d, i) => (
+                      <tr key={i} className="border-b border-green-100 last:border-0 align-top">
+                        <td className="py-1 pr-2 font-medium whitespace-nowrap">{d.field}</td>
+                        <td className="py-1 pr-2 text-green-900/90">{d.existing}</td>
+                        <td className="py-1 pl-2 text-green-900/90">{d.incoming}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {isRevision && existingSnapshot?.status !== 'pending' && (
             <div className="rounded p-3 bg-amber-50 border border-amber-200 text-xs text-amber-900">
               <div className="font-medium text-sm">
                 Revision detected for ticket #{' '}
@@ -578,11 +665,21 @@ export function ParsePreview({
         >
           Reject
         </button>
+        {canApproveInPlace && (
+          <button
+            onClick={approveInPlace}
+            className="px-3 py-2 text-sm rounded bg-green-700 text-white font-semibold hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Non-destructive: keeps the existing ticket ID and line items, attaches this signed PDF, flips status pending → invoiced"
+          >
+            {committing ? 'Approving…' : 'Mark existing as approved'}
+          </button>
+        )}
         {isRevision && (
           <button
             onClick={() => commit(true)}
             disabled={!canReplace}
             className="px-3 py-2 text-sm rounded bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Destructive: deletes the existing ticket + line items and re-inserts with the parsed data"
           >
             {committing ? 'Replacing…' : 'Replace existing ticket'}
           </button>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import type { TicketStatus } from '@/types/database';
 import type {
   DuplicateInfo,
   ExistingTicketSnapshot,
@@ -17,7 +18,7 @@ export async function checkDuplicates(parsed: ParsedTicket): Promise<DuplicateIn
     .from('tickets')
     .select(
       `
-      id, ticket_number, ticket_date, face_value, is_master,
+      id, ticket_number, ticket_date, face_value, is_master, status,
       service_pos(po_number),
       line_items(category, description, quantity, unit, rate,
                  source_amount, markup_percent, final_amount, sort_order),
@@ -34,6 +35,7 @@ export async function checkDuplicates(parsed: ParsedTicket): Promise<DuplicateIn
       ticket_date: string;
       face_value: string | number;
       is_master: boolean;
+      status: TicketStatus;
       service_pos: { po_number: string } | null;
       line_items: Array<{
         category: ParsedLineItem['category'];
@@ -78,6 +80,7 @@ export async function checkDuplicates(parsed: ParsedTicket): Promise<DuplicateIn
       po_number: e.service_pos?.po_number ?? 'unknown',
       face_value: Number(e.face_value),
       is_master: e.is_master,
+      status: e.status,
       bol_numbers: bols,
       line_items: lineItems,
     };

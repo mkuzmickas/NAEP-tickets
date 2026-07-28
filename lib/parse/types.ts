@@ -1,4 +1,4 @@
-import type { LineItemCategory } from '@/types/database';
+import type { LineItemCategory, TicketStatus } from '@/types/database';
 
 export type FormatHint =
   | 'surepoint'
@@ -39,6 +39,10 @@ export type ExistingTicketSnapshot = {
   po_number: string;
   face_value: number;
   is_master: boolean;
+  /** Internal invoicing state. When 'pending' the client offers a
+   *  non-destructive "Mark as approved" action alongside the destructive
+   *  Replace path. */
+  status: TicketStatus;
   bol_numbers: string[];
   line_items: ParsedLineItem[];
 };

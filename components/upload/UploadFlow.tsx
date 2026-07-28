@@ -164,6 +164,36 @@ export function UploadFlow() {
     setItems((prev) => prev.filter((it) => it.localId !== localId));
   }
 
+  /** Non-destructive path for the "signed PDF for a pending ticket" case:
+   *  preserves the existing ticket record, flips status to invoiced,
+   *  stamps Approved by Client/PM, and swaps in the signed PDF. See
+   *  app/api/tickets/[id]/approve/route.ts for the server side. */
+  async function approveInPlace(
+    localId: string,
+    existingTicketId: string,
+    storagePath: string,
+    result: ParseResult
+  ) {
+    const res = await fetch(
+      `/api/tickets/${existingTicketId}/approve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storage_path: storagePath }),
+      }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error ?? `Approve-in-place failed (${res.status})`);
+    }
+    patchItem(localId, {
+      status: 'committed',
+      result,
+      replaced: true,
+    });
+    router.refresh();
+  }
+
   return (
     <div className="space-y-6">
       <div
@@ -237,6 +267,9 @@ export function UploadFlow() {
               key={item.localId}
               item={item}
               onCommit={(r, replace) => commitItem(item.localId, r, replace)}
+              onApproveInPlace={(existingId, path, r) =>
+                approveInPlace(item.localId, existingId, path, r)
+              }
               onReject={() => rejectItem(item.localId, item.storagePath)}
             />
           ))}
@@ -249,10 +282,16 @@ export function UploadFlow() {
 function ItemCard({
   item,
   onCommit,
+  onApproveInPlace,
   onReject,
 }: {
   item: Item;
   onCommit: (r: ParseResult, replace?: boolean) => Promise<void>;
+  onApproveInPlace: (
+    existingTicketId: string,
+    storagePath: string,
+    r: ParseResult
+  ) => Promise<void>;
   onReject: () => void;
 }) {
   if (item.status === 'uploading' || item.status === 'parsing') {
@@ -316,6 +355,7 @@ function ItemCard({
       filename={item.file.name}
       initialResult={item.result!}
       onCommit={onCommit}
+      onApproveInPlace={onApproveInPlace}
       onReject={onReject}
     />
   );
