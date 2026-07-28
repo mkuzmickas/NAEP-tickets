@@ -27,14 +27,21 @@ function buildSeries(points: TrendPoint[]): Series {
   return out;
 }
 
+// Nice-ceil with finer steps so we don't jump from $5.6M straight up to $10M.
+// Steps at 1, 1.5, 2, 3, 4, 5, 6, 8, 10 × 10^n keep the Y-axis tight to the data.
 function niceCeil(n: number): number {
   if (n <= 0) return 100_000;
   const pow = Math.pow(10, Math.floor(Math.log10(n)));
   const rel = n / pow;
   let stepMult = 1;
   if (rel <= 1) stepMult = 1;
+  else if (rel <= 1.5) stepMult = 1.5;
   else if (rel <= 2) stepMult = 2;
+  else if (rel <= 3) stepMult = 3;
+  else if (rel <= 4) stepMult = 4;
   else if (rel <= 5) stepMult = 5;
+  else if (rel <= 6) stepMult = 6;
+  else if (rel <= 8) stepMult = 8;
   else stepMult = 10;
   return stepMult * pow;
 }
