@@ -243,14 +243,13 @@
   }
 
   /* Pin light colours on the report so a dark-mode screen still
-     prints legibly. Chip colours (green/red text + border) come
-     through the schedule-block's `* { print-color-adjust: exact }`
-     rule already; we just make sure the DEFAULT is black on white. */
-  .print-only,
-  .print-only * {
-    color: #131417;
-  }
+     prints legibly. Only sets a default on the container itself so
+     descendant inline colours (amber signatures, semantic tones on
+     approval chips, etc.) still take precedence. Never use the
+     descendant selector here — it would flatten every intentional
+     accent to dark ink. */
   .print-only {
+    color: #131417;
     background: #fff !important;
   }
 

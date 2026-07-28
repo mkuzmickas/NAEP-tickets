@@ -61,7 +61,7 @@ export function PrintVendorReport({ vendor }: { vendor: VendorSummary }) {
   const facDelta = vendor.total_forecast - vendor.total_committed;
 
   return (
-    <div className="print-only" aria-hidden="true">
+    <div className="print-only vendor-print-report" aria-hidden="true">
       <div
         style={{
           fontFamily:
@@ -69,6 +69,7 @@ export function PrintVendorReport({ vendor }: { vendor: VendorSummary }) {
           fontSize: 10,
           lineHeight: 1.45,
           color: INK,
+          paddingTop: 18,
         }}
       >
         <ReportHeader
@@ -136,62 +137,96 @@ function ReportHeader({
   ticketCount: number;
 }) {
   return (
-    <header
-      style={{
-        borderBottom: `2px solid ${AMBER}`,
-        paddingBottom: 12,
-        marginBottom: 14,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-end',
-        gap: 24,
-      }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <div
+    <header style={{ marginBottom: 18 }}>
+      {/* Brand strip — small orange marker + program name, gives the sheet
+          a clear "who published this" line before the vendor takes over. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 8,
+          textTransform: 'uppercase',
+          letterSpacing: '0.14em',
+          fontWeight: 700,
+          color: INK_MUTED,
+          marginBottom: 10,
+        }}
+      >
+        <span
           style={{
-            fontSize: 7.5,
-            textTransform: 'uppercase',
-            letterSpacing: '0.14em',
-            color: INK_MUTED,
-            fontWeight: 700,
-            marginBottom: 4,
+            display: 'inline-block',
+            width: 18,
+            height: 3,
+            background: '#d04e00',
           }}
-        >
-          Vendor Snapshot
-        </div>
-        <h1
-          style={{
-            fontSize: 22,
-            fontWeight: 700,
-            margin: 0,
-            letterSpacing: '-0.015em',
-            lineHeight: 1.15,
-            color: INK,
-          }}
-        >
-          {vendorDisplayName}
-        </h1>
-        <p
-          style={{
-            margin: '4px 0 0',
-            fontSize: 9.5,
-            color: INK_MUTED,
-          }}
-        >
-          {vendorLegalName}
-        </p>
+        />
+        NAEP Field Cost Tracker
+        <span style={{ color: RULE }}>·</span>
+        <span style={{ color: INK_MUTED, fontWeight: 500, letterSpacing: '0.05em' }}>
+          Aitken Creek Expansion Project · Enbridge Gas Inc.
+        </span>
       </div>
-      <MetaStack
-        rows={[
-          { label: 'Generated', value: generated },
-          { label: 'Program', value: 'Aitken Creek Expansion · Enbridge' },
-          {
-            label: 'Portfolio',
-            value: `${poCount} PO${poCount === 1 ? '' : 's'} · ${ticketCount} ticket${ticketCount === 1 ? '' : 's'}`,
-          },
-        ]}
-      />
+
+      {/* Main letterhead — vendor block left, meta stack right,
+          amber signature underline below both. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          gap: 24,
+          borderBottom: `2px solid ${AMBER}`,
+          paddingBottom: 12,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 8,
+              textTransform: 'uppercase',
+              letterSpacing: '0.16em',
+              color: AMBER_700,
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Vendor Snapshot
+          </div>
+          <h1
+            style={{
+              fontSize: 26,
+              fontWeight: 700,
+              margin: 0,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.1,
+              color: INK,
+            }}
+          >
+            {vendorDisplayName}
+          </h1>
+          <p
+            style={{
+              margin: '5px 0 0',
+              fontSize: 10,
+              color: INK_MUTED,
+              fontWeight: 500,
+            }}
+          >
+            {vendorLegalName}
+          </p>
+        </div>
+        <MetaStack
+          rows={[
+            { label: 'Generated', value: generated },
+            {
+              label: 'Portfolio',
+              value: `${poCount} PO${poCount === 1 ? '' : 's'} · ${ticketCount} ticket${ticketCount === 1 ? '' : 's'}`,
+            },
+            { label: 'Project', value: '30006386' },
+          ]}
+        />
+      </div>
     </header>
   );
 }
@@ -205,26 +240,27 @@ function MetaStack({
     <div
       style={{
         textAlign: 'right',
-        fontSize: 8.5,
+        fontSize: 9,
         color: INK_MUTED,
         fontVariantNumeric: 'tabular-nums',
         minWidth: 200,
+        lineHeight: 1.5,
       }}
     >
       {rows.map((r) => (
-        <div key={r.label} style={{ marginTop: 2 }}>
+        <div key={r.label}>
           <span
             style={{
               textTransform: 'uppercase',
-              letterSpacing: '0.09em',
+              letterSpacing: '0.11em',
               fontSize: 7,
               fontWeight: 700,
-              marginRight: 6,
+              marginRight: 8,
             }}
           >
             {r.label}
           </span>
-          <span style={{ color: INK, fontWeight: 500 }}>{r.value}</span>
+          <span style={{ color: INK, fontWeight: 600 }}>{r.value}</span>
         </div>
       ))}
     </div>
