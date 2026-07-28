@@ -138,15 +138,6 @@ export function ParsePreview({
 
   const isIdenticalDuplicate = !!existingSnapshot && diffs.length === 0;
   const isRevision = !!existingSnapshot && diffs.length > 0;
-  /** When the existing ticket is pending, uploading a signed PDF is the
-   *  typical "approve in place" case — non-destructive, preserves record. */
-  const canApproveInPlace =
-    !!existingSnapshot &&
-    existingSnapshot.status === 'pending' &&
-    reconciled &&
-    !hasBlockingBolDup &&
-    initialResult.po_exists &&
-    !committing;
 
   // BOL collisions where the master_ticket is the same one we're replacing
   // are "self-collisions" — they'll be deleted by the replace operation
@@ -171,6 +162,16 @@ export function ParsePreview({
 
   const canReplace =
     isRevision &&
+    reconciled &&
+    !hasBlockingBolDup &&
+    initialResult.po_exists &&
+    !committing;
+
+  /** When the existing ticket is pending, uploading a signed PDF is the
+   *  typical "approve in place" case — non-destructive, preserves record. */
+  const canApproveInPlace =
+    !!existingSnapshot &&
+    existingSnapshot.status === 'pending' &&
     reconciled &&
     !hasBlockingBolDup &&
     initialResult.po_exists &&
