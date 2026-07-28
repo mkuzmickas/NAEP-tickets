@@ -481,13 +481,30 @@ function ForecastRow({
     }
   }
 
+  // Implied % — the value that would make FAC equal to committed. Shown
+  // as the input placeholder AND used to populate the FAC / Overrun cells
+  // when nothing is manually entered yet, so the whole row shows something
+  // useful the moment the page loads. Rendered muted + italic with a ~
+  // prefix so the reader can tell inferred numbers from manual ones.
+  const impliedPct =
+    row.committed > 0 && row.lem > 0
+      ? Math.min(100, (row.lem / row.committed) * 100)
+      : null;
+  const isImplied = row.percent_complete == null;
+  const displayFac = row.fac ?? (impliedPct != null ? row.committed : null);
+  const displayOverrun = row.overrun ?? (impliedPct != null ? 0 : null);
+
   const overrunTone =
-    row.overrun == null
+    displayOverrun == null
       ? 'text-[var(--text-muted)]/60'
-      : row.overrun > 0.5
-        ? 'text-[var(--over)] font-semibold'
-        : row.overrun < -0.5
-          ? 'text-[var(--under)]'
+      : displayOverrun > 0.5
+        ? isImplied
+          ? 'text-[var(--over)]/60'
+          : 'text-[var(--over)] font-semibold'
+        : displayOverrun < -0.5
+          ? isImplied
+            ? 'text-[var(--under)]/60'
+            : 'text-[var(--under)]'
           : 'text-[var(--text-muted)]';
 
   return (
@@ -533,8 +550,8 @@ function ForecastRow({
               }
             }}
             disabled={saving}
-            placeholder="—"
-            className={`w-20 text-right tabular rounded border px-2 py-1 text-[15px] focus:outline-none disabled:opacity-60 ${
+            placeholder={impliedPct != null ? impliedPct.toFixed(1) : '—'}
+            className={`w-20 text-right tabular rounded border px-2 py-1 text-[15px] focus:outline-none disabled:opacity-60 placeholder:italic placeholder:text-[var(--text-muted)]/60 ${
               error
                 ? 'border-[var(--over)] focus:border-[var(--over)]'
                 : 'border-[var(--border)] focus:border-[var(--brand-orange)]'
@@ -550,21 +567,36 @@ function ForecastRow({
         )}
       </td>
       <td className="px-4 py-3 text-right tabular align-top">
-        {row.fac == null ? (
+        {displayFac == null ? (
           <span className="text-[var(--text-muted)]/50">—</span>
+        ) : isImplied ? (
+          <span
+            className="text-[var(--text-muted)]/70 italic"
+            title="Implied from LEM ÷ committed. Type a % to override."
+          >
+            ~{formatMoney(displayFac)}
+          </span>
         ) : (
-          formatMoney(row.fac)
+          formatMoney(displayFac)
         )}
       </td>
       <td
         className={`px-4 py-3 text-right tabular align-top ${overrunTone}`}
       >
-        {row.overrun == null ? (
+        {displayOverrun == null ? (
           <span className="text-[var(--text-muted)]/50">—</span>
+        ) : isImplied ? (
+          <span
+            className="italic"
+            title="Implied from LEM ÷ committed. Type a % to override."
+          >
+            ~{displayOverrun > 0 ? '+' : ''}
+            {formatMoney(displayOverrun)}
+          </span>
         ) : (
           <>
-            {row.overrun > 0 ? '+' : ''}
-            {formatMoney(row.overrun)}
+            {displayOverrun > 0 ? '+' : ''}
+            {formatMoney(displayOverrun)}
           </>
         )}
       </td>
