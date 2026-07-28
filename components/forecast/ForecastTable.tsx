@@ -10,7 +10,11 @@ import {
 } from 'lucide-react';
 import { Card, CardHeader } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
-import { computeFac, forecastContribution, type ForecastPo } from '@/lib/forecast';
+import {
+  computeFac,
+  forecastContribution,
+  type ForecastPo,
+} from '@/lib/forecast.shared';
 
 type SortKey =
   | 'po_number'
