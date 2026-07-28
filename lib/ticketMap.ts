@@ -1,5 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
-import { JOB_TO_PO } from '@/lib/ewp/ticket-ewp';
+import {
+  JOB_TO_PO,
+  ewpForTicket,
+  isMultipleEwpTicket,
+} from '@/lib/ewp/ticket-ewp';
 import {
   APPROVED_LABEL,
   shortTicketNumber,
@@ -78,9 +82,27 @@ export async function getTicketMapData(): Promise<TicketMapData> {
 
   const rawTickets = (ticketsRes.data ?? []) as RawTicketV2[];
 
+  // po_id → po_number lookup, needed by the EWP helpers below to route
+  // 2001285 tickets against the code map (which is authoritative — any
+  // change to TICKET_EWP / TICKET_EWP_MULTIPLE takes effect on the next
+  // page load without touching the DB).
+  const poNumberById = new Map<string, string>();
+  for (const p of (posRes.data ?? []) as RawPoV2[]) {
+    poNumberById.set(p.id, p.po_number);
+  }
+
   const ticketsByPo = new Map<string, MapTicket[]>();
   for (const t of rawTickets) {
     const face = Number(t.face_value);
+    const poNumber = poNumberById.get(t.po_id) ?? '';
+    // 2001285 tickets read their EWP + multiple flag from the code map;
+    // every other PO trusts the DB value (whole-PO rule for 2001271 was
+    // already stamped in at insert time, everything else has ewp_no null).
+    const isMultiple = isMultipleEwpTicket(poNumber, t.ticket_number);
+    const codeEwp =
+      poNumber === 'PUR-6540-2001285'
+        ? ewpForTicket(poNumber, t.ticket_number)
+        : t.ewp_no;
     const mapped: MapTicket = {
       id: t.id,
       po_id: t.po_id,
@@ -90,7 +112,11 @@ export async function getTicketMapData(): Promise<TicketMapData> {
       face_value: face,
       approval_status: t.approval_status,
       approved: t.approval_status === APPROVED_LABEL,
-      ewp_no: t.ewp_no,
+      // Multiple tickets clear ewp_no so bucketing routes them to the
+      // Multiple bucket rather than a numbered one — is_multiple_ewp is
+      // the discriminator either way.
+      ewp_no: isMultiple ? null : codeEwp,
+      is_multiple_ewp: isMultiple,
       pdf_storage_path: t.pdf_storage_path,
     };
     const arr = ticketsByPo.get(t.po_id) ?? [];

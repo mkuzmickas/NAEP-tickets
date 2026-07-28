@@ -399,13 +399,22 @@ function PoCard({ po }: { po: MapPo }) {
 }
 
 function EwpBucket({ bucket }: { bucket: MapEwpBucket }) {
-  const unassigned = bucket.ewp_no == null;
-  const leftBorderCls = unassigned
-    ? 'border-l-[var(--warn)]'
-    : 'border-l-[var(--amber)]';
-  const outerBorderCls = unassigned
-    ? 'border-[var(--warn)]/30'
-    : 'border-[var(--border)]';
+  // Three visual variants:
+  //   ewp        → amber accent, "EWP #N + title"
+  //   multiple   → brand-orange accent, "Multiple EWPs + subtitle"
+  //   unassigned → warn accent, "Unassigned to EWP" + warning line
+  const leftBorderCls =
+    bucket.kind === 'unassigned'
+      ? 'border-l-[var(--warn)]'
+      : bucket.kind === 'multiple'
+        ? 'border-l-[var(--brand-orange)]'
+        : 'border-l-[var(--amber)]';
+  const outerBorderCls =
+    bucket.kind === 'unassigned'
+      ? 'border-[var(--warn)]/30'
+      : bucket.kind === 'multiple'
+        ? 'border-[var(--brand-orange)]/30'
+        : 'border-[var(--border)]';
 
   return (
     <div
@@ -415,10 +424,19 @@ function EwpBucket({ bucket }: { bucket: MapEwpBucket }) {
         className={`flex items-center justify-between gap-3 px-4 py-2.5 border-l-4 ${leftBorderCls} border-b border-b-[var(--border)]`}
       >
         <div className="min-w-0">
-          {unassigned ? (
+          {bucket.kind === 'unassigned' ? (
             <span className="font-semibold text-sm text-[var(--warn)]">
               Unassigned to EWP
             </span>
+          ) : bucket.kind === 'multiple' ? (
+            <>
+              <span className="font-semibold text-sm text-[var(--brand-orange)]">
+                Multiple EWPs
+              </span>
+              <span className="ml-2 text-xs text-[var(--text-muted)]">
+                Ticket spans more than one EWP
+              </span>
+            </>
           ) : (
             <>
               <span className="font-semibold text-sm text-[var(--text)]">
@@ -434,7 +452,7 @@ function EwpBucket({ bucket }: { bucket: MapEwpBucket }) {
           {bucket.count} · {formatMoney(bucket.sum_billable)}
         </div>
       </div>
-      {unassigned && (
+      {bucket.kind === 'unassigned' && (
         <div className="px-4 pt-2.5 text-[11px] text-[var(--warn)] font-medium">
           ⚠ No WTP number yet.
         </div>

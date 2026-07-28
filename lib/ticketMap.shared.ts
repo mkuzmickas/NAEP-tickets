@@ -22,6 +22,10 @@ export type MapTicket = {
   approval_status: string | null;
   approved: boolean;
   ewp_no: number | null;
+  /** True when this ticket's line items span more than one EWP (per
+   *  TICKET_EWP_MULTIPLE in lib/ewp/ticket-ewp.ts). When true the ticket
+   *  goes into the Multiple EWPs bucket regardless of ewp_no. */
+  is_multiple_ewp: boolean;
   pdf_storage_path: string | null;
 };
 
@@ -48,6 +52,10 @@ export type MapPo = {
 };
 
 export type MapEwpBucket = {
+  /** Discriminates the three bucket shapes so the UI can style them
+   *  without inferring intent from ewp_no === null (which would collapse
+   *  Multiple and Unassigned into one visual). */
+  kind: 'ewp' | 'multiple' | 'unassigned';
   ewp_no: number | null;
   title: string;
   tickets: MapTicket[];
@@ -75,17 +83,18 @@ export function shortTicketNumber(ticketNumber: string): string {
   return base.startsWith('SL26-') ? base.slice(5) : base;
 }
 
-/** Group a PO's tickets into EWP sub-buckets in the exact order the card
- *  renders them: EWP numbers ascending, Unassigned last. Every EWP number
- *  we know about (Appendix B) that has at least one ticket gets a bucket;
- *  numbers with zero tickets are omitted so the card doesn't grow blank
- *  boxes. */
+/** Group a PO's tickets into EWP sub-buckets in the order the card renders
+ *  them: numbered EWPs ascending, then Multiple EWPs, then Unassigned.
+ *  Empty buckets are omitted so the card doesn't grow blank boxes. */
 export function bucketTicketsByEwp(tickets: MapTicket[]): MapEwpBucket[] {
   const byEwp = new Map<number, MapTicket[]>();
+  const multiple: MapTicket[] = [];
   const unassigned: MapTicket[] = [];
 
   for (const t of tickets) {
-    if (t.ewp_no == null) {
+    if (t.is_multiple_ewp) {
+      multiple.push(t);
+    } else if (t.ewp_no == null) {
       unassigned.push(t);
     } else {
       const arr = byEwp.get(t.ewp_no) ?? [];
@@ -97,6 +106,7 @@ export function bucketTicketsByEwp(tickets: MapTicket[]): MapEwpBucket[] {
   const buckets: MapEwpBucket[] = Array.from(byEwp.entries())
     .sort(([a], [b]) => a - b)
     .map(([ewp, ts]) => ({
+      kind: 'ewp' as const,
       ewp_no: ewp,
       title: EWP_LABEL[ewp] ?? `EWP ${ewp}`,
       tickets: ts,
@@ -104,8 +114,20 @@ export function bucketTicketsByEwp(tickets: MapTicket[]): MapEwpBucket[] {
       sum_billable: ts.reduce((s, t) => s + t.face_value, 0),
     }));
 
+  if (multiple.length > 0) {
+    buckets.push({
+      kind: 'multiple',
+      ewp_no: null,
+      title: 'Multiple EWPs',
+      tickets: multiple,
+      count: multiple.length,
+      sum_billable: multiple.reduce((s, t) => s + t.face_value, 0),
+    });
+  }
+
   if (unassigned.length > 0) {
     buckets.push({
+      kind: 'unassigned',
       ewp_no: null,
       title: 'Unassigned to EWP',
       tickets: unassigned,
