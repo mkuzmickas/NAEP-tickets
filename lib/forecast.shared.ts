@@ -30,11 +30,15 @@ export function computeFac(
 }
 
 /** The contribution a PO makes to the project-level rolled-up forecast.
- *  Forecasted POs contribute their FAC; unforecasted POs contribute their
- *  committed value (baseline assumption — the PO will land at budget). */
+ *  Forecasted POs contribute their FAC. Unforecasted POs contribute the
+ *  larger of committed and LEM — you can't credibly forecast landing
+ *  under what's already been spent, so an over-committed PO with no
+ *  manual forecast yet floors at LEM, not committed. */
 export function forecastContribution(po: {
   committed: number;
+  lem?: number;
   fac: number | null;
 }): number {
-  return po.fac ?? po.committed;
+  if (po.fac != null) return po.fac;
+  return Math.max(po.committed, po.lem ?? 0);
 }

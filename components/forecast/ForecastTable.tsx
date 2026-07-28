@@ -58,13 +58,20 @@ type SortKey =
 // makes FAC exactly equal to committed.
 // -----------------------------------------------------------------------------
 function derive(p: ForecastPo) {
+  // Implied % is capped at 100 so an over-committed PO doesn't propose an
+  // over-100 placeholder; the honest floor for FAC in that case is LEM
+  // itself. computeFac(lem, impliedPct) gives us committed when lem <=
+  // committed and lem when lem > committed — either way it's honest.
   const impliedPct =
     p.committed > 0 && p.lem > 0
       ? Math.min(100, (p.lem / p.committed) * 100)
       : null;
   const isImplied = p.percent_complete == null;
-  const displayFac = p.fac ?? (impliedPct != null ? p.committed : null);
-  const displayOverrun = p.overrun ?? (impliedPct != null ? 0 : null);
+  const impliedFac =
+    impliedPct != null ? Math.max(p.committed, p.lem) : null;
+  const displayFac = p.fac ?? impliedFac;
+  const displayOverrun =
+    p.overrun ?? (impliedFac != null ? impliedFac - p.committed : null);
   return { impliedPct, isImplied, displayFac, displayOverrun };
 }
 

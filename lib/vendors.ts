@@ -159,7 +159,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     v.po_count++;
     v.total_committed += committed;
     v.total_lem += lem;
-    v.total_forecast += forecastContribution({ committed, fac: forecast });
+    v.total_forecast += forecastContribution({ committed, lem, fac: forecast });
     if (forecast != null) v.forecasted_po_count++;
     v.ticket_count += tickets.length;
     v.approved_count += tickets.filter((t) => t.status === 'invoiced').length;
