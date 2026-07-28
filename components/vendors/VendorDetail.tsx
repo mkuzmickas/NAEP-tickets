@@ -24,7 +24,7 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
 
   return (
     <>
-    <div className="no-print">
+    <div className="no-print h-full">
     <PageContainer>
       <div className="space-y-6">
         <div>

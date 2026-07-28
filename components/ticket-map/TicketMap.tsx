@@ -77,7 +77,7 @@ export function TicketMap({ data }: { data: TicketMapData }) {
 
   return (
     <>
-      <div className="no-print">
+      <div className="no-print h-full">
         <PageContainer>
           <div className="space-y-6">
             <PageHeader
