@@ -18,7 +18,7 @@ import {
   type MapPo,
   type MapTicket,
   type TicketMapData,
-} from '@/lib/ticketMap';
+} from '@/lib/ticketMap.shared';
 import { PrintUnapproved } from './PrintUnapproved';
 
 // -----------------------------------------------------------------------------

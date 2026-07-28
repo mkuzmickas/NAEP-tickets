@@ -214,7 +214,7 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
       </div>
 
       {/* Progress bar */}
-      <div className="mb-5">
+      <div className="mb-3">
         <div className="flex h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
           <div
             className={`h-full transition-all ${barTone}`}
@@ -228,6 +228,14 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
           )}
         </div>
       </div>
+
+      {/* Forecast strip */}
+      <ForecastStrip
+        totalForecast={vendor.total_forecast}
+        totalCommitted={vendor.total_committed}
+        forecastedPoCount={vendor.forecasted_po_count}
+        poCount={vendor.po_count}
+      />
 
       {/* Footer stats */}
       <div className="mt-auto pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs">
@@ -261,5 +269,53 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
         </span>
       </div>
     </Link>
+  );
+}
+
+function ForecastStrip({
+  totalForecast,
+  totalCommitted,
+  forecastedPoCount,
+  poCount,
+}: {
+  totalForecast: number;
+  totalCommitted: number;
+  forecastedPoCount: number;
+  poCount: number;
+}) {
+  const delta = totalForecast - totalCommitted;
+  const tone =
+    delta > 0.5
+      ? 'text-[var(--over)]'
+      : delta < -0.5
+        ? 'text-[var(--under)]'
+        : 'text-[var(--text-muted)]';
+  const anyForecasted = forecastedPoCount > 0;
+  return (
+    <div className="mb-4 flex items-baseline justify-between gap-2 text-[11px]">
+      <div className="tabular text-[var(--text-muted)]">
+        Forecast{' '}
+        <span className="text-[var(--text)] font-semibold">
+          {formatMoney(totalForecast)}
+        </span>
+      </div>
+      <div className="tabular text-[10px]">
+        {anyForecasted ? (
+          <>
+            <span className={`font-medium ${tone}`}>
+              {delta >= 0 ? '+' : ''}
+              {formatMoney(delta)}
+            </span>{' '}
+            <span className="text-[var(--text-muted)]/70">
+              · {forecastedPoCount} of {poCount} forecasted
+            </span>
+          </>
+        ) : (
+          <span className="text-[var(--text-muted)]/70 italic">
+            no forecast yet
+          </span>
+        )}
+      </div>
+    </div>
   );
 }

@@ -12,6 +12,7 @@ type PatchBody = {
   committed_amount?: number;
   vendor_system_incurred?: number | null;
   vendor_job_ref?: string | null;
+  percent_complete?: number | null;
 };
 
 export async function PATCH(
@@ -79,6 +80,19 @@ export async function PATCH(
   if (body.vendor_job_ref !== undefined) {
     const v = (body.vendor_job_ref ?? '').trim();
     updates.vendor_job_ref = v || null;
+  }
+  if (body.percent_complete !== undefined) {
+    if (body.percent_complete === null) {
+      updates.percent_complete = null;
+    } else {
+      const n = Number(body.percent_complete);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        errors.push('Percent complete must be between 0 and 100.');
+      } else {
+        // Cap precision at 2 decimals to match the numeric(5,2) column.
+        updates.percent_complete = Math.round(n * 100) / 100;
+      }
+    }
   }
 
   if (errors.length > 0) {

@@ -55,7 +55,7 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
 
         {addPoOpen && <AddPoDialog onClose={() => setAddPoOpen(false)} />}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <StatTile
             label="Total Committed"
             value={formatMoney(vendor.total_committed)}
@@ -66,6 +66,22 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
             value={formatMoney(vendor.total_lem)}
             sub={`${pctUsed.toFixed(1)}% of commitment`}
             emphasis
+          />
+          <StatTile
+            label="Forecast at Completion"
+            value={formatMoney(vendor.total_forecast)}
+            sub={
+              vendor.forecasted_po_count === 0
+                ? `0 of ${vendor.po_count} POs forecasted`
+                : `${vendor.forecasted_po_count} of ${vendor.po_count} POs · ${vendor.total_forecast - vendor.total_committed >= 0 ? '+' : ''}${formatMoney(vendor.total_forecast - vendor.total_committed)} vs committed`
+            }
+            tone={
+              vendor.total_forecast - vendor.total_committed > 0.5
+                ? 'over'
+                : vendor.total_forecast - vendor.total_committed < -0.5
+                  ? 'under'
+                  : 'neutral'
+            }
           />
           <StatTile
             label="Approved by Enbridge"
@@ -194,9 +210,14 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
       </div>
 
       {/* Money strip */}
-      <div className="px-6 py-4 grid grid-cols-3 gap-6 border-b border-[var(--border)]">
+      <div className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-6 border-b border-[var(--border)]">
         <MoneyStat label="Committed" value={po.committed} />
         <MoneyStat label="LEM-to-Date" value={po.lem} />
+        <ForecastStat
+          fac={po.forecast}
+          committed={po.committed}
+          pct={po.percent_complete}
+        />
         <MoneyStat
           label="Remaining"
           value={po.committed - po.lem}
@@ -247,6 +268,64 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
         )}
       </div>
     </Card>
+  );
+}
+
+function ForecastStat({
+  fac,
+  committed,
+  pct,
+}: {
+  fac: number | null;
+  committed: number;
+  pct: number | null;
+}) {
+  if (fac == null) {
+    return (
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
+          Forecast
+        </div>
+        <div className="tabular text-lg font-semibold mt-1 tracking-tight text-[var(--text-muted)]/60">
+          —
+        </div>
+        <div className="text-[10px] text-[var(--text-muted)] mt-0.5 italic">
+          Enter % complete on Forecast page
+        </div>
+      </div>
+    );
+  }
+  const delta = fac - committed;
+  const tone =
+    delta > 0.5
+      ? 'text-[var(--over)]'
+      : delta < -0.5
+        ? 'text-[var(--under)]'
+        : 'text-[var(--text)]';
+  const deltaTone =
+    delta > 0.5
+      ? 'text-[var(--over)]'
+      : delta < -0.5
+        ? 'text-[var(--under)]'
+        : 'text-[var(--text-muted)]';
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
+        Forecast
+      </div>
+      <div className={`tabular text-lg font-semibold mt-1 tracking-tight ${tone}`}>
+        {formatMoney(fac)}
+      </div>
+      <div className={`text-[10px] mt-0.5 tabular ${deltaTone}`}>
+        {pct != null && (
+          <span className="text-[var(--text-muted)]">
+            {pct}% ·{' '}
+          </span>
+        )}
+        {delta >= 0 ? '+' : ''}
+        {formatMoney(delta)}
+      </div>
+    </div>
   );
 }
 

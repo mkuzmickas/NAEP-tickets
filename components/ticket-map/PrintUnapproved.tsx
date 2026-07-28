@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { formatMoney } from '@/lib/money';
-import type { MapPo, MapTicket, TicketMapData } from '@/lib/ticketMap';
+import type { MapPo, MapTicket, TicketMapData } from '@/lib/ticketMap.shared';
 
 // Bordered chips + tables survive greyscale; backgrounds get stripped by many
 // browsers on print, so nothing critical is background-only. All colours are

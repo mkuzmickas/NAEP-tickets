@@ -1,146 +1,27 @@
 import { createClient } from '@/lib/supabase/server';
+import { JOB_TO_PO } from '@/lib/ewp/ticket-ewp';
 import {
-  JOB_TO_PO,
-  stripDatePrefix,
-  EWP_LABEL,
-} from '@/lib/ewp/ticket-ewp';
+  APPROVED_LABEL,
+  shortTicketNumber,
+  type MapPo,
+  type MapTicket,
+  type TicketMapData,
+} from '@/lib/ticketMap.shared';
 
-// -----------------------------------------------------------------------------
-// Legacy shapes — still consumed by the current TicketMap component until the
-// UI redesign in Step 6 lands. Delete once nothing references them.
-// -----------------------------------------------------------------------------
-
-export type TicketMapPo = {
-  id: string;
-  po_number: string;
-  vendor_display_name: string;
-  scope: string | null;
-  committed_amount: number;
-};
-
-export type TicketMapTicket = {
-  id: string;
-  po_id: string;
-  ticket_number: string;
-  ticket_date: string;
-  face_value: number;
-  status: 'pending' | 'invoiced' | 'rejected';
-  pdf_storage_path: string | null;
-};
-
-type RawPo = Omit<TicketMapPo, 'committed_amount'> & {
-  committed_amount: string | number;
-};
-
-type RawTicket = Omit<TicketMapTicket, 'face_value'> & {
-  face_value: string | number;
-};
-
-export async function getAllPosForMap(): Promise<TicketMapPo[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from('service_pos')
-    .select('id, po_number, vendor_display_name, scope, committed_amount')
-    .order('po_number', { ascending: true });
-  if (error) throw error;
-  return (data as RawPo[]).map((r) => ({
-    id: r.id,
-    po_number: r.po_number,
-    vendor_display_name: r.vendor_display_name,
-    scope: r.scope,
-    committed_amount: Number(r.committed_amount),
-  }));
-}
-
-export async function getTicketsForPoIds(
-  poIds: string[]
-): Promise<TicketMapTicket[]> {
-  if (poIds.length === 0) return [];
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from('tickets')
-    .select('id, po_id, ticket_number, ticket_date, face_value, status, pdf_storage_path')
-    .in('po_id', poIds)
-    .neq('status', 'rejected')
-    .order('ticket_date', { ascending: true });
-  if (error) throw error;
-  return (data as RawTicket[]).map((r) => ({
-    id: r.id,
-    po_id: r.po_id,
-    ticket_number: r.ticket_number,
-    ticket_date: r.ticket_date,
-    face_value: Number(r.face_value),
-    status: r.status,
-    pdf_storage_path: r.pdf_storage_path,
-  }));
-}
-
-// -----------------------------------------------------------------------------
-// SureLine-style Ticket Map data — approval + EWP shaped output that the
-// redesigned TicketMap component (Step 6) will render off directly.
-// -----------------------------------------------------------------------------
-
-// Green colouring on the map is driven by this exact string, per the spec.
-export const APPROVED_LABEL = 'Approved by Client/PM' as const;
-
-export type MapTicket = {
-  id: string;
-  po_id: string;
-  /** As stored — may include a leading date prefix from Aimsio. */
-  ticket_number: string;
-  /** Ticket number with any leading date prefix stripped AND the `SL26-`
-   *  prefix removed — this is what the chip actually displays. */
-  ticket_number_short: string;
-  ticket_date: string;
-  face_value: number;
-  approval_status: string | null;
-  approved: boolean;
-  ewp_no: number | null;
-  pdf_storage_path: string | null;
-};
-
-export type MapPo = {
-  id: string;
-  po_number: string;
-  vendor_display_name: string;
-  scope: string | null;
-  /** SL26-XXX derived from the reverse of JOB_TO_PO. Null for POs that
-   *  aren't in the SureLine job register (Medallion, LaPrairie, etc.). */
-  job_number: string | null;
-  /** True for POs that carry the "tracked by EWP" amber badge — 2001285
-   *  (per-ticket EWP) and 2001271 (whole-PO EWP 11). */
-  ewp_tracked: boolean;
-  /** True only for POs whose card renders EWP sub-buckets instead of a
-   *  flat chip row. Right now: 2001285 only. */
-  is_ewp_broken_down: boolean;
-  ticket_count: number;
-  approved_count: number;
-  not_approved_count: number;
-  total_billable: number;
-  value_at_risk: number;
-  tickets: MapTicket[];
-};
-
-export type MapEwpBucket = {
-  ewp_no: number | null;
-  title: string;
-  tickets: MapTicket[];
-  count: number;
-  sum_billable: number;
-};
-
-export type TicketMapData = {
-  pos: MapPo[];
-  /** Distinct SL26 job numbers across every PO, sorted, for the filter bar. */
-  jobs: string[];
-  totals: {
-    tickets: number;
-    approved: number;
-    not_approved: number;
-    value_at_risk: number;
-    jobs: number;
-  };
-};
+// Re-export the shared surface so `import { ... } from '@/lib/ticketMap'`
+// still works for server-side callers that want to grab the type alongside
+// getTicketMapData in one line. Client components must import from
+// `@/lib/ticketMap.shared` directly — importing from this file pulls in
+// next/headers via the supabase server client and Next.js will refuse.
+export {
+  APPROVED_LABEL,
+  bucketTicketsByEwp,
+  shortTicketNumber,
+  type MapEwpBucket,
+  type MapPo,
+  type MapTicket,
+  type TicketMapData,
+} from '@/lib/ticketMap.shared';
 
 // PO → job reverse map, built once at module load.
 const PO_TO_JOB: Record<string, string> = {};
@@ -174,13 +55,6 @@ type RawPoV2 = {
   vendor_display_name: string;
   scope: string | null;
 };
-
-/** Trim the leading date prefix and the `SL26-` marker so chips read as
- *  `101-000-001` instead of the full stored string. */
-function shortTicketNumber(ticketNumber: string): string {
-  const base = stripDatePrefix(ticketNumber);
-  return base.startsWith('SL26-') ? base.slice(5) : base;
-}
 
 export async function getTicketMapData(): Promise<TicketMapData> {
   const supabase = createClient();
@@ -274,46 +148,4 @@ export async function getTicketMapData(): Promise<TicketMapData> {
   };
 
   return { pos, jobs, totals };
-}
-
-/** Group a PO's tickets into EWP sub-buckets in the exact order the card
- *  renders them: EWP numbers ascending, Unassigned last. Every EWP number
- *  we know about (Appendix B) that has at least one ticket gets a bucket;
- *  numbers with zero tickets are omitted so the card doesn't grow blank
- *  boxes. */
-export function bucketTicketsByEwp(tickets: MapTicket[]): MapEwpBucket[] {
-  const byEwp = new Map<number, MapTicket[]>();
-  const unassigned: MapTicket[] = [];
-
-  for (const t of tickets) {
-    if (t.ewp_no == null) {
-      unassigned.push(t);
-    } else {
-      const arr = byEwp.get(t.ewp_no) ?? [];
-      arr.push(t);
-      byEwp.set(t.ewp_no, arr);
-    }
-  }
-
-  const buckets: MapEwpBucket[] = Array.from(byEwp.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([ewp, ts]) => ({
-      ewp_no: ewp,
-      title: EWP_LABEL[ewp] ?? `EWP ${ewp}`,
-      tickets: ts,
-      count: ts.length,
-      sum_billable: ts.reduce((s, t) => s + t.face_value, 0),
-    }));
-
-  if (unassigned.length > 0) {
-    buckets.push({
-      ewp_no: null,
-      title: 'Unassigned to EWP',
-      tickets: unassigned,
-      count: unassigned.length,
-      sum_billable: unassigned.reduce((s, t) => s + t.face_value, 0),
-    });
-  }
-
-  return buckets;
 }

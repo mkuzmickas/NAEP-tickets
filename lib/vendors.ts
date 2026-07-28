@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { computeFac, forecastContribution } from '@/lib/forecast';
 
 export type TicketBrief = {
   id: string;
@@ -18,6 +19,9 @@ export type PoWithTickets = {
   lem: number;
   vendor_system_incurred: number | null;
   vendor_gap: number | null;
+  percent_complete: number | null;
+  /** LEM ÷ (% complete/100). Null when %complete is null or 0. */
+  forecast: number | null;
   tickets: TicketBrief[];
 };
 
@@ -32,6 +36,11 @@ export type VendorSummary = {
   ticket_count: number;
   approved_count: number;
   pending_count: number;
+  /** Σ forecastContribution across every PO — FAC where forecasted,
+   *  committed where not. Matches the dashboard rollup rule. */
+  total_forecast: number;
+  /** Number of POs on this vendor with a real forecast (percent_complete > 0). */
+  forecasted_po_count: number;
   last_ticket_date: string | null;
   pos: PoWithTickets[];
 };
@@ -53,6 +62,7 @@ type RawPo = {
   vendor_job_ref: string | null;
   committed_amount: string | number;
   vendor_system_incurred: string | number | null;
+  percent_complete: string | number | null;
 };
 
 type RawTicket = {
@@ -71,7 +81,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     supabase
       .from('service_pos')
       .select(
-        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, vendor_system_incurred'
+        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, vendor_system_incurred, percent_complete'
       ),
     supabase
       .from('tickets')
@@ -107,6 +117,10 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
         : Number(p.vendor_system_incurred);
     const gap = vsi == null ? null : vsi - lem;
 
+    const pct =
+      p.percent_complete == null ? null : Number(p.percent_complete);
+    const forecast = computeFac(lem, pct);
+
     const po: PoWithTickets = {
       id: p.id,
       po_number: p.po_number,
@@ -117,6 +131,8 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       lem,
       vendor_system_incurred: vsi,
       vendor_gap: gap,
+      percent_complete: pct,
+      forecast,
       tickets,
     };
 
@@ -133,6 +149,8 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
         ticket_count: 0,
         approved_count: 0,
         pending_count: 0,
+        total_forecast: 0,
+        forecasted_po_count: 0,
         last_ticket_date: null,
         pos: [],
       };
@@ -141,6 +159,8 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     v.po_count++;
     v.total_committed += committed;
     v.total_lem += lem;
+    v.total_forecast += forecastContribution({ committed, fac: forecast });
+    if (forecast != null) v.forecasted_po_count++;
     v.ticket_count += tickets.length;
     v.approved_count += tickets.filter((t) => t.status === 'invoiced').length;
     v.pending_count += tickets.filter((t) => t.status === 'pending').length;

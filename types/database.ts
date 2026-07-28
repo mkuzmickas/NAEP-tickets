@@ -11,6 +11,10 @@ export type ServicePO = {
   vendor_system_incurred: number | null;
   vendor_job_ref: string | null;
   tracks_shipping: boolean;
+  /** Manual 0-100 percent complete entered on the Forecast page. Drives
+   *  Forecast at Completion (FAC) = lem_to_date / (percent_complete/100).
+   *  Null or zero => forecast is not computable for that PO. */
+  percent_complete: number | null;
   notes: string | null;
   created_at: string;
 };

@@ -73,9 +73,15 @@ function weeksList(): Date[] {
 export function CashFlowChart({
   points,
   totalCommitted,
+  forecastAtCompletion,
 }: {
   points: CashFlowPoint[];
   totalCommitted: number;
+  /** Rolled-up FAC across every PO (forecasted contributes its FAC,
+   *  unforecasted contributes committed). Draws a dashed reference line
+   *  at Y = this value, coloured red when over committed, green under.
+   *  Omitted or zero => no line. */
+  forecastAtCompletion?: number;
 }) {
   const [hover, setHover] = useState<{ x: number; y: number; date: Date; value: number } | null>(null);
 
@@ -161,6 +167,17 @@ export function CashFlowChart({
             <LegendSwatch
               color="var(--brand-orange)"
               label={`Committed ${formatMoney(totalCommitted)}`}
+              dashed
+            />
+          )}
+          {forecastAtCompletion != null && forecastAtCompletion > 0 && (
+            <LegendSwatch
+              color={
+                forecastAtCompletion > totalCommitted
+                  ? 'var(--over)'
+                  : 'var(--under)'
+              }
+              label={`Forecast ${formatMoney(forecastAtCompletion)}`}
               dashed
             />
           )}
@@ -292,6 +309,47 @@ export function CashFlowChart({
               </text>
             </g>
           )}
+
+          {/* Forecast at Completion reference line — different dash rhythm
+              from the Committed line so both stay legible when their Y
+              positions are close. Clamped to Y_MAX if the forecast blows
+              past the chart ceiling; label calls that out with "(off
+              chart)". */}
+          {forecastAtCompletion != null &&
+            forecastAtCompletion > 0 &&
+            (() => {
+              const overCommitted =
+                forecastAtCompletion > totalCommitted + 0.5;
+              const color = overCommitted
+                ? 'var(--over)'
+                : 'var(--under)';
+              const clipped = forecastAtCompletion > Y_MAX;
+              const yPos = yScale(Math.min(forecastAtCompletion, Y_MAX));
+              return (
+                <g>
+                  <line
+                    x1={PAD.left}
+                    x2={W - PAD.right}
+                    y1={yPos}
+                    y2={yPos}
+                    stroke={color}
+                    strokeWidth={1.5}
+                    strokeDasharray="10 4 2 4"
+                  />
+                  <text
+                    x={PAD.left + 8}
+                    y={yPos - 7}
+                    textAnchor="start"
+                    fontSize={10}
+                    fill={color}
+                    fontWeight={600}
+                  >
+                    Forecast · {formatMoney(forecastAtCompletion)}
+                    {clipped ? ' (off chart)' : ''}
+                  </text>
+                </g>
+              );
+            })()}
 
           {/* Today marker */}
           {showToday && (

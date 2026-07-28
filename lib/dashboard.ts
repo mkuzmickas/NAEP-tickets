@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import type { ActivePoSummary } from '@/types/database';
+import { forecastContribution, getForecastPos } from '@/lib/forecast';
 
 type RawRow = {
   id: string;
@@ -82,6 +83,24 @@ export type DashboardTotals = {
   activeVendorCount: number;
   pctOfActiveCommitment: number;
 };
+
+/** Rolled-up Forecast at Completion across every PO. Forecasted POs use
+ *  their FAC; unforecasted POs contribute their committed value. Same
+ *  contribution rule as the Forecast page's footer row and the vendor
+ *  card FAC number, so numbers reconcile everywhere. */
+export type ForecastRollup = {
+  totalFac: number;
+  /** Number of POs with a percent_complete > 0 populated. */
+  forecastedCount: number;
+  totalPos: number;
+};
+
+export async function getForecastRollup(): Promise<ForecastRollup> {
+  const pos = await getForecastPos();
+  const totalFac = pos.reduce((s, p) => s + forecastContribution(p), 0);
+  const forecastedCount = pos.filter((p) => p.fac != null).length;
+  return { totalFac, forecastedCount, totalPos: pos.length };
+}
 
 export function computeTotals(rows: ActivePoSummary[]): DashboardTotals {
   const totalLem = rows.reduce((sum, r) => sum + r.lem_to_date, 0);
