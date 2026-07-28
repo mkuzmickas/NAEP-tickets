@@ -17,6 +17,8 @@ type RawTicket = {
   computed_total: string | number;
   reconciled: boolean;
   status: TicketStatus;
+  approval_status: string | null;
+  ewp_no: number | null;
   pdf_storage_path: string | null;
   markup_notes: string | null;
   schedule_package_id: string | null;
@@ -62,6 +64,7 @@ export async function getAllTickets(): Promise<TicketRow[]> {
       `
       id, po_id, ticket_number, ticket_date, source_type, is_master,
       face_value, computed_total, reconciled, status,
+      approval_status, ewp_no,
       pdf_storage_path, markup_notes, schedule_package_id, created_at, created_by,
       service_pos ( po_number, vendor_display_name, scope ),
       line_items ( id, ticket_id, category, description, quantity, unit, rate,
@@ -86,6 +89,8 @@ export async function getAllTickets(): Promise<TicketRow[]> {
     computed_total: nReq(t.computed_total),
     reconciled: t.reconciled,
     status: t.status,
+    approval_status: t.approval_status,
+    ewp_no: t.ewp_no,
     pdf_storage_path: t.pdf_storage_path,
     markup_notes: t.markup_notes,
     schedule_package_id: t.schedule_package_id,
