@@ -19,6 +19,30 @@ export type ParsedLineItem = {
   final_amount: number;
 };
 
+/** Aitken Creek Gas Storage approval stamp on a signed field ticket. The
+ *  red-bordered box in the bottom margin with PN, AFE/CC, PO, Amount, GL,
+ *  Date, Location, Supervisor, Manager, and Signature fields. Presence +
+ *  ink in the Signature field is the physical proof of approval that
+ *  gates the non-destructive "Mark existing as approved" flow. */
+export type SignatureStamp = {
+  /** True if the parser saw the stamp box at all, whether signed or not. */
+  detected: boolean;
+  /** Name in the Supervisor field (e.g. "Desmond Meyer", "Kip Anderson",
+   *  "Adrian Chen", "Taylor Wu"). Null if illegible or blank. */
+  supervisor: string | null;
+  /** Name in the Manager field (typically "Jade Rowe"). */
+  manager: string | null;
+  /** Date printed on the stamp, ISO YYYY-MM-DD. May differ from
+   *  ticket_date when the ticket is signed after the fact. */
+  stamp_date: string | null;
+  /** Amount printed in the Amount field, numeric. Cross-check against
+   *  the ticket's own face_value. */
+  stamp_amount: number | null;
+  /** True only if there's visible ink / handwritten mark in the Signature
+   *  field. False means "stamp present but nobody signed it". */
+  signed: boolean;
+};
+
 export type ParsedTicket = {
   ticket_number: string;
   ticket_date: string;
@@ -30,6 +54,10 @@ export type ParsedTicket = {
   bol_numbers: string[];
   line_items: ParsedLineItem[];
   markup_notes?: string;
+  /** Aitken Creek Gas Storage approval stamp read from the PDF. Null when
+   *  the parser couldn't find any recognisable stamp block. Ephemeral —
+   *  not persisted with the ticket record. */
+  signature_stamp?: SignatureStamp | null;
 };
 
 export type ExistingTicketSnapshot = {

@@ -28,7 +28,15 @@ Return ONLY a JSON object with this exact schema. No markdown, no commentary, no
       "final_amount": number
     }
   ],
-  "markup_notes": string
+  "markup_notes": string,
+  "signature_stamp": {
+    "detected": boolean,
+    "supervisor": string | null,
+    "manager": string | null,
+    "stamp_date": string | null,
+    "stamp_amount": number | null,
+    "signed": boolean
+  } | null
 }
 
 Critical rules:
@@ -54,6 +62,19 @@ Master tickets:
 
 LOA/Subsistence goes in category "loa_other".
 markup_notes is optional free text — e.g. "third-party materials +10% per PO terms".
+
+Signature stamp detection:
+- Look for a rectangular box (usually with a red or black border) somewhere on the PDF — typically at the bottom of page 1, or on a separate signature page — titled "Aitken Creek Gas Storage LTD." or containing that phrase in a header.
+- The stamp block contains these fields in some arrangement: PN/Unit #, AFE/CC #, PO #, Amount, GL #, Date, Location, Supervisor, Manager, Signature.
+- If NO such stamp block is present anywhere on the PDF, set signature_stamp = null (whole object). Do NOT invent fields.
+- If the stamp block IS present:
+  - Set signature_stamp.detected = true.
+  - supervisor: the name in the Supervisor field. Common values are Kip <lastname>, Desmond Meyer, Adrian <lastname>, Taylor <lastname>. If illegible, blank, or scribbled beyond recognition, use null.
+  - manager: the name in the Manager field. Often Jade Rowe. Null if illegible.
+  - stamp_date: the date printed in the stamp's Date field, ISO YYYY-MM-DD. Null if blank or illegible.
+  - stamp_amount: the number in the stamp's Amount field (strip $, commas). Null if blank.
+  - signed: true ONLY if there is a handwritten signature, initial, mark, or ink in the Signature field/line. If the Signature line is a bare pre-printed line with nothing on it, set signed = false. When in doubt, set false — a false negative here is safer than a false positive.
+- Never guess. Every field on the stamp that you cannot read confidently should be null, not fabricated.
 
 Reply with JSON only.`;
 

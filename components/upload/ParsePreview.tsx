@@ -8,6 +8,7 @@ import type {
   ParseResult,
   ParsedLineItem,
   ParsedTicket,
+  SignatureStamp,
 } from '@/lib/parse/types';
 
 const CATEGORIES: { value: LineItemCategory; label: string }[] = [
@@ -177,6 +178,14 @@ export function ParsePreview({
     initialResult.po_exists &&
     !committing;
 
+  /** Signature stamp state derived from the parser. Drives the stamp chip
+   *  above the banners and the styling of the Mark-as-approved button. */
+  const stamp = initialResult.parsed.signature_stamp ?? null;
+  const stampVerified = !!stamp && stamp.detected && stamp.signed;
+  const stampPresentButUnsigned =
+    !!stamp && stamp.detected && !stamp.signed;
+  const noStamp = !stamp || !stamp.detected;
+
   function updateLine(i: number, patch: Partial<ParsedLineItem>) {
     setTicket((t) => ({
       ...t,
@@ -282,6 +291,14 @@ export function ParsePreview({
           )}
         </div>
       </div>
+
+      {/* Signature stamp chip — rendered above every other banner because
+          it's the "is this really approved?" signal, not a warning. */}
+      {stamp && (
+        <div className="px-5 py-3 border-b border-black/10">
+          <StampChip stamp={stamp} faceValue={ticket.face_value} />
+        </div>
+      )}
 
       {showBanners && (
         <div className="px-5 py-3 border-b border-black/10 space-y-2">
@@ -666,14 +683,36 @@ export function ParsePreview({
         >
           Reject
         </button>
-        {canApproveInPlace && (
+        {canApproveInPlace && stampVerified && (
           <button
             onClick={approveInPlace}
             className="px-3 py-2 text-sm rounded bg-green-700 text-white font-semibold hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Non-destructive: keeps the existing ticket ID and line items, attaches this signed PDF, flips status pending → invoiced"
+            title="Signature stamp verified — non-destructive: keeps ticket ID + line items, attaches this signed PDF, flips status pending → invoiced"
           >
-            {committing ? 'Approving…' : 'Mark existing as approved'}
+            {committing ? 'Approving…' : '✓ Mark existing as approved'}
           </button>
+        )}
+        {canApproveInPlace && !stampVerified && (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-red-800 hover:text-red-900 select-none px-2 py-2">
+              {noStamp
+                ? '⚠ No stamp — approve anyway'
+                : '⚠ Stamp not signed — approve anyway'}
+            </summary>
+            <div className="absolute right-4 mt-1 z-10 rounded border border-red-200 bg-white shadow-lg p-3 text-xs max-w-xs">
+              <p className="text-red-900 mb-2">
+                {noStamp
+                  ? 'This PDF has no Aitken Creek Gas Storage approval stamp. Approving means you personally verify this is a signed copy.'
+                  : 'The stamp is present but the Signature field is empty. Approving means you personally verify the ticket is approved despite the missing signature.'}
+              </p>
+              <button
+                onClick={approveInPlace}
+                className="w-full px-2 py-1.5 rounded bg-red-700 text-white font-medium hover:bg-red-800 disabled:opacity-50"
+              >
+                {committing ? 'Approving…' : 'Force approval'}
+              </button>
+            </div>
+          </details>
         )}
         {isRevision && (
           <button
@@ -730,4 +769,95 @@ function Banner({
       ? 'bg-red-50 border border-red-200 text-red-900'
       : 'bg-amber-50 border border-amber-200 text-amber-900';
   return <div className={`text-xs rounded p-2 ${cls}`}>{children}</div>;
+}
+
+/** Signature-stamp state chip, rendered above the parse banners.
+ *  Colour + copy signal whether the PDF is a signed approval, a bare
+ *  submission, or something in between. */
+function StampChip({
+  stamp,
+  faceValue,
+}: {
+  stamp: SignatureStamp;
+  faceValue: number;
+}) {
+  const amountMismatch =
+    stamp.stamp_amount != null &&
+    Math.abs(stamp.stamp_amount - faceValue) >= 1.0;
+
+  if (stamp.detected && stamp.signed) {
+    return (
+      <div className="rounded p-3 bg-green-50 border border-green-200 text-xs text-green-900">
+        <div className="font-semibold text-sm flex items-center gap-1.5">
+          <span>✓</span>
+          <span>Signature stamp verified</span>
+        </div>
+        <div className="mt-1 text-green-900/85">
+          Signed by{' '}
+          <strong className="text-green-900">
+            {stamp.supervisor ?? 'unnamed supervisor'}
+          </strong>
+          {stamp.stamp_date && (
+            <>
+              {' '}on <span className="tabular-nums">{stamp.stamp_date}</span>
+            </>
+          )}
+          {stamp.manager && <> · Manager: {stamp.manager}</>}
+          {stamp.stamp_amount != null && (
+            <>
+              {' '}· Stamp amount:{' '}
+              <span className="tabular-nums">
+                {formatMoney(stamp.stamp_amount)}
+              </span>
+              {amountMismatch && (
+                <span className="text-amber-800 font-medium">
+                  {' '}⚠ doesn&apos;t match ticket total{' '}
+                  {formatMoney(faceValue)}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (stamp.detected && !stamp.signed) {
+    return (
+      <div className="rounded p-3 bg-amber-50 border border-amber-200 text-xs text-amber-900">
+        <div className="font-semibold text-sm flex items-center gap-1.5">
+          <span>⚠</span>
+          <span>Stamp present but not signed</span>
+        </div>
+        <div className="mt-1 text-amber-900/85">
+          The Aitken Creek Gas Storage approval box is on this PDF but the
+          Signature field is empty.
+          {stamp.supervisor && (
+            <>
+              {' '}Supervisor{' '}
+              <strong className="text-amber-900">{stamp.supervisor}</strong>{' '}
+              hasn&apos;t signed yet.
+            </>
+          )}{' '}
+          Don&apos;t treat this as approved until it&apos;s signed.
+        </div>
+      </div>
+    );
+  }
+
+  // detected === false — no stamp box on the PDF at all.
+  return (
+    <div className="rounded p-3 bg-red-50 border border-red-200 text-xs text-red-900">
+      <div className="font-semibold text-sm flex items-center gap-1.5">
+        <span>⚠</span>
+        <span>No approval stamp detected</span>
+      </div>
+      <div className="mt-1 text-red-900/85">
+        This PDF has no Aitken Creek Gas Storage stamp block — it looks like
+        a fresh submission, not a signed approval. If you&apos;re trying to
+        flip a pending ticket to approved, verify the stamp is on the PDF
+        first.
+      </div>
+    </div>
+  );
 }
