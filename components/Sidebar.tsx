@@ -11,6 +11,7 @@ import {
   CalendarRange,
   Truck,
   TrendingUp,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -27,6 +28,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Vendors', href: '/vendors', icon: Building2 },
       { label: 'Logged Tickets', href: '/tickets', icon: Table2 },
+      { label: 'Unapproved', href: '/unapproved', icon: AlertTriangle },
       { label: 'Shipping Costs', href: '/shipping-tracker', icon: Truck },
       { label: 'Forecast', href: '/forecast', icon: TrendingUp },
     ],
