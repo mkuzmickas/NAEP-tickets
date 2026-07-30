@@ -83,16 +83,19 @@ export const TICKET_EWP_MULTIPLE: Set<string> = new Set([
   'SL26-101-000-061',
 ]);
 
-// Appendix B — EWP titles. Used both by the 2001285 sub-bucket headers and
-// anywhere else in the UI that renders an EWP number in isolation.
+// Appendix B — EWP titles, matched to the SureLine portal's own labels
+// so the EWP sub-bucket headers read identically across both portals.
+// Extend when new EWPs land on the coding sheet.
 export const EWP_LABEL: Record<number, string> = {
   4: 'Start Air Receiver Skid',
   5: 'Concrete',
-  8: 'North-South Rack',
+  8: 'North South Pipe Rack Mods',
   11: 'Buried Facilities', // whole-PO rule: PUR-6540-2001271
-  12: 'Flare & Rack',
-  13: 'Tank Farm / Pump Bldg',
-  22: 'Sales Custody Transfer',
+  12: 'Flare, LP/HP FKO, Rack, Surge Drum',
+  13: 'Tank Farm, Pump Bldg, VRU, Surge Drum',
+  14: 'Gens and Power Dist',
+  18: 'KBZ 1&2, Rack, and Lube Oil Coolant Stn.',
+  22: 'Sales Gas Skid & Building',
 };
 
 // Appendix C — Job → PO fallback, used only when the CSV filename doesn't
