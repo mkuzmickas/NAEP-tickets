@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, XCircle, Plus, Check, Printer } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Plus, Printer } from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader, StatTile, Card } from '@/components/ui/Primitives';
 import { AddPoDialog } from '@/components/vendors/AddPoDialog';
@@ -127,46 +127,19 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
 }
 
 function VendorPoCard({ po }: { po: PoWithTickets }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
   const total = po.tickets.length;
   // Coloring rule matches Ticket Map: approved = client-side sign-off
   // (Aimsio "Approved by Client/PM"). Everything else — pending, Sent to
   // Client via Portal, See Notes, blank — reads red.
   const approved = po.tickets.filter((t) => t.approved).length;
   const pending = total - approved;
-  const pendingIds = po.tickets
-    .filter((t) => !t.approved)
-    .map((t) => t.id);
   const pctApp = total > 0 ? Math.round((approved / total) * 100) : 0;
   const pctUsed = po.committed > 0 ? (po.lem / po.committed) * 100 : 0;
 
-  async function approveAllPending() {
-    if (pendingIds.length === 0 || busy) return;
-    const ok = window.confirm(
-      `Mark ${pendingIds.length} pending ticket${pendingIds.length === 1 ? '' : 's'} on ${po.po_number} as approved by Enbridge?`
-    );
-    if (!ok) return;
-    setBusy(true);
-    const results = await Promise.allSettled(
-      pendingIds.map((id) =>
-        fetch(`/api/tickets/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'invoiced' }),
-        }).then((r) => {
-          if (!r.ok) throw new Error(`Failed (${r.status})`);
-          return r;
-        })
-      )
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      alert(`${failed} of ${pendingIds.length} tickets failed to update. Try again.`);
-    }
-    router.refresh();
-    setBusy(false);
-  }
+  // Approval status is only set by (1) an Aimsio CSV import (reads
+  // "Approved by Client/PM" from the vendor's own tracker) or (2)
+  // uploading a signed PDF whose Aitken Creek stamp block the parser
+  // verifies. No casual bulk-approve from this card.
 
   const pctTone =
     pctUsed > 100
@@ -255,27 +228,14 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
         />
       </div>
 
-      {/* Approval progress */}
+      {/* Approval progress — bar only, no bulk-approve action. */}
       {total > 0 && (
         <div className="px-6 pt-4">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-[var(--over-bg)]">
-              <div
-                className="h-full bg-[var(--under)] transition-all"
-                style={{ width: `${pctApp}%` }}
-              />
-            </div>
-            {pending > 0 && (
-              <button
-                onClick={approveAllPending}
-                disabled={busy}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--under)] hover:text-[var(--surface)] hover:bg-[var(--under)] border border-[var(--under)] rounded-md px-2 py-1 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                title="Flip every pending ticket on this PO to invoiced/approved"
-              >
-                <Check className="h-3 w-3" strokeWidth={3} />
-                {busy ? 'Approving…' : `Approve all ${pending}`}
-              </button>
-            )}
+          <div className="flex h-1.5 rounded-full overflow-hidden bg-[var(--over-bg)]">
+            <div
+              className="h-full bg-[var(--under)] transition-all"
+              style={{ width: `${pctApp}%` }}
+            />
           </div>
           <div className="mt-1.5 text-[11px] text-[var(--text-muted)] tabular">
             {pctApp}% approved · {approved} of {total} · {formatMoney(po.lem)} logged
