@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ewpForTicket } from '@/lib/ewp/ticket-ewp';
+import { APPROVED_LABEL } from '@/lib/ticketMap.shared';
 
 export const maxDuration = 30;
 export const runtime = 'nodejs';
@@ -273,6 +274,12 @@ export async function POST(req: Request) {
 
       const approvalStatus = (row[iOffice] ?? '').trim() || null;
       const ewpNo = ewpForTicket(file.po_number, ticketNumber);
+      // Translate Aimsio's Office Approval Status into our internal
+      // invoicing state. Only "Approved by Client/PM" is invoiceable;
+      // everything else — Sent to Client via Portal, Approved to Send,
+      // See Notes, blank — is pending sign-off.
+      const newStatus: 'invoiced' | 'pending' =
+        approvalStatus === APPROVED_LABEL ? 'invoiced' : 'pending';
 
       // Ticket numbers are globally unique in this schema — look up without
       // a PO filter so a status-only row inserted for the wrong PO gets caught.
@@ -301,6 +308,7 @@ export async function POST(req: Request) {
         const patch: Record<string, unknown> = {
           approval_status: approvalStatus,
           ewp_no: ewpNo,
+          status: newStatus,
         };
         if (existing.source_type === 'aimsio_status') {
           patch.face_value = faceValue;
@@ -330,7 +338,7 @@ export async function POST(req: Request) {
           face_value: faceValue,
           computed_total: faceValue,
           reconciled: true,
-          status: 'invoiced',
+          status: newStatus,
           approval_status: approvalStatus,
           ewp_no: ewpNo,
           created_by: user.id,
