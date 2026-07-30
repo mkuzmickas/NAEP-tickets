@@ -1,12 +1,30 @@
 import { createClient } from '@/lib/supabase/server';
 import { computeFac, forecastContribution } from '@/lib/forecast';
+import {
+  ewpForTicket,
+  isMultipleEwpTicket,
+  stripDatePrefix,
+} from '@/lib/ewp/ticket-ewp';
+import { APPROVED_LABEL } from '@/lib/ticketMap.shared';
 
 export type TicketBrief = {
   id: string;
   ticket_number: string;
+  /** Ticket number with any leading date prefix + the `SL26-` prefix
+   *  stripped — matches how the Ticket Map renders chips. */
+  ticket_number_short: string;
   ticket_date: string;
   face_value: number;
   status: 'pending' | 'invoiced' | 'rejected';
+  /** Client-side approval status from Aimsio. Drives the chip green/red
+   *  colouring on the EWP-broken-down PO cards (same rule as Ticket Map). */
+  approval_status: string | null;
+  approved: boolean;
+  /** EWP roll-up for tickets on PO 2001285; whole-PO EWP 11 for 2001271;
+   *  null everywhere else. Re-derived at read time from the code map so
+   *  edits to TICKET_EWP take effect on the next page load. */
+  ewp_no: number | null;
+  is_multiple_ewp: boolean;
 };
 
 export type PoWithTickets = {
@@ -22,6 +40,13 @@ export type PoWithTickets = {
   percent_complete: number | null;
   /** LEM ÷ (% complete/100). Null when %complete is null or 0. */
   forecast: number | null;
+  /** True for POs that carry the "tracked by EWP" amber badge on the
+   *  vendor detail card — 2001285 (per-ticket EWP) and 2001271 (whole-
+   *  PO EWP 11). */
+  ewp_tracked: boolean;
+  /** True only for POs whose vendor detail card renders EWP sub-bucket
+   *  boxes instead of a flat chip row. Right now: 2001285 only. */
+  is_ewp_broken_down: boolean;
   tickets: TicketBrief[];
 };
 
@@ -72,7 +97,19 @@ type RawTicket = {
   ticket_date: string;
   face_value: string | number;
   status: 'pending' | 'invoiced' | 'rejected';
+  approval_status: string | null;
+  ewp_no: number | null;
 };
+
+const EWP_TRACKED_POS = new Set(['PUR-6540-2001285', 'PUR-6540-2001271']);
+const EWP_BROKEN_DOWN_POS = new Set(['PUR-6540-2001285']);
+
+/** Trim the leading date prefix and the `SL26-` marker so chips read as
+ *  `101-000-001` instead of the full stored string. */
+function shortTicketNumber(ticketNumber: string): string {
+  const base = stripDatePrefix(ticketNumber);
+  return base.startsWith('SL26-') ? base.slice(5) : base;
+}
 
 export async function getAllVendors(): Promise<VendorSummary[]> {
   const supabase = createClient();
@@ -85,7 +122,9 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       ),
     supabase
       .from('tickets')
-      .select('id, po_id, ticket_number, ticket_date, face_value, status')
+      .select(
+        'id, po_id, ticket_number, ticket_date, face_value, status, approval_status, ewp_no'
+      )
       .neq('status', 'rejected')
       .order('ticket_date', { ascending: true }),
   ]);
@@ -93,15 +132,37 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
   if (posRes.error) throw posRes.error;
   if (ticketsRes.error) throw ticketsRes.error;
 
+  // po_id → po_number so we can apply the whole-PO EWP rules and the
+  // per-ticket code map at read time (same behaviour as the Ticket Map).
+  const poNumberById = new Map<string, string>();
+  for (const p of (posRes.data ?? []) as RawPo[]) {
+    poNumberById.set(p.id, p.po_number);
+  }
+
   const ticketsByPo = new Map<string, TicketBrief[]>();
   for (const t of (ticketsRes.data ?? []) as RawTicket[]) {
+    const poNumber = poNumberById.get(t.po_id) ?? '';
+    // 2001285 tickets read their EWP + multiple flag from the code map
+    // (authoritative). Other POs trust the DB value — 2001271 was
+    // stamped at insert time, everything else stays null.
+    const isMultiple = isMultipleEwpTicket(poNumber, t.ticket_number);
+    const codeEwp =
+      poNumber === 'PUR-6540-2001285'
+        ? ewpForTicket(poNumber, t.ticket_number)
+        : t.ewp_no;
+
     const arr = ticketsByPo.get(t.po_id) ?? [];
     arr.push({
       id: t.id,
       ticket_number: t.ticket_number,
+      ticket_number_short: shortTicketNumber(t.ticket_number),
       ticket_date: t.ticket_date,
       face_value: Number(t.face_value),
       status: t.status,
+      approval_status: t.approval_status,
+      approved: t.approval_status === APPROVED_LABEL,
+      ewp_no: isMultiple ? null : codeEwp,
+      is_multiple_ewp: isMultiple,
     });
     ticketsByPo.set(t.po_id, arr);
   }
@@ -133,6 +194,8 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       vendor_gap: gap,
       percent_complete: pct,
       forecast,
+      ewp_tracked: EWP_TRACKED_POS.has(p.po_number),
+      is_ewp_broken_down: EWP_BROKEN_DOWN_POS.has(p.po_number),
       tickets,
     };
 

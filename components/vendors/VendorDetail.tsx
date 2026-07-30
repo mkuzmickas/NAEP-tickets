@@ -10,6 +10,7 @@ import { AddPoDialog } from '@/components/vendors/AddPoDialog';
 import { PrintVendorReport } from '@/components/vendors/PrintVendorReport';
 import { formatMoney, formatPct } from '@/lib/money';
 import type { PoWithTickets, TicketBrief, VendorSummary } from '@/lib/vendors';
+import { EWP_LABEL } from '@/lib/ewp/ticket-ewp';
 
 export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
   const [addPoOpen, setAddPoOpen] = useState(false);
@@ -129,10 +130,13 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const total = po.tickets.length;
-  const approved = po.tickets.filter((t) => t.status === 'invoiced').length;
+  // Coloring rule matches Ticket Map: approved = client-side sign-off
+  // (Aimsio "Approved by Client/PM"). Everything else — pending, Sent to
+  // Client via Portal, See Notes, blank — reads red.
+  const approved = po.tickets.filter((t) => t.approved).length;
   const pending = total - approved;
   const pendingIds = po.tickets
-    .filter((t) => t.status === 'pending')
+    .filter((t) => !t.approved)
     .map((t) => t.id);
   const pctApp = total > 0 ? Math.round((approved / total) * 100) : 0;
   const pctUsed = po.committed > 0 ? (po.lem / po.committed) * 100 : 0;
@@ -190,6 +194,14 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
                 title="Vendor's own job number"
               >
                 {po.vendor_job_ref}
+              </span>
+            )}
+            {po.ewp_tracked && (
+              <span
+                className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-[var(--amber)] text-[var(--text)]"
+                title="This PO is broken down by EWP on the Ticket Map"
+              >
+                Tracked by EWP
               </span>
             )}
           </div>
@@ -271,12 +283,23 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
         </div>
       )}
 
-      {/* Ticket chips */}
+      {/* Ticket chips — flat grid for most POs, EWP sub-buckets for
+          those flagged as broken-down (2001285 today). Matches the
+          Ticket Map's rendering pattern so the two views agree. */}
       <div className="px-6 py-5">
         {total === 0 ? (
           <p className="text-xs italic text-[var(--text-muted)]">
             No tickets on file yet.
           </p>
+        ) : po.is_ewp_broken_down ? (
+          <div className="space-y-3">
+            {bucketVendorTicketsByEwp(po.tickets).map((bucket) => (
+              <EwpBucket
+                key={bucket.kind + '-' + (bucket.ewp_no ?? 'x')}
+                bucket={bucket}
+              />
+            ))}
+          </div>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {po.tickets.map((t) => (
@@ -286,6 +309,135 @@ function VendorPoCard({ po }: { po: PoWithTickets }) {
         )}
       </div>
     </Card>
+  );
+}
+
+// EWP-bucket types + helpers, mirroring lib/ticketMap.shared.ts but scoped
+// to TicketBrief so we don't have to widen the vendor lib to MapTicket.
+type VendorEwpBucket = {
+  kind: 'ewp' | 'multiple' | 'unassigned';
+  ewp_no: number | null;
+  title: string;
+  tickets: TicketBrief[];
+  count: number;
+  sum_billable: number;
+};
+
+function bucketVendorTicketsByEwp(
+  tickets: TicketBrief[]
+): VendorEwpBucket[] {
+  const byEwp = new Map<number, TicketBrief[]>();
+  const multiple: TicketBrief[] = [];
+  const unassigned: TicketBrief[] = [];
+
+  for (const t of tickets) {
+    if (t.is_multiple_ewp) {
+      multiple.push(t);
+    } else if (t.ewp_no == null) {
+      unassigned.push(t);
+    } else {
+      const arr = byEwp.get(t.ewp_no) ?? [];
+      arr.push(t);
+      byEwp.set(t.ewp_no, arr);
+    }
+  }
+
+  const buckets: VendorEwpBucket[] = Array.from(byEwp.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([ewp, ts]) => ({
+      kind: 'ewp' as const,
+      ewp_no: ewp,
+      title: EWP_LABEL[ewp] ?? `EWP ${ewp}`,
+      tickets: ts,
+      count: ts.length,
+      sum_billable: ts.reduce((s, t) => s + t.face_value, 0),
+    }));
+
+  if (multiple.length > 0) {
+    buckets.push({
+      kind: 'multiple',
+      ewp_no: null,
+      title: 'Multiple EWPs',
+      tickets: multiple,
+      count: multiple.length,
+      sum_billable: multiple.reduce((s, t) => s + t.face_value, 0),
+    });
+  }
+  if (unassigned.length > 0) {
+    buckets.push({
+      kind: 'unassigned',
+      ewp_no: null,
+      title: 'Unassigned to EWP',
+      tickets: unassigned,
+      count: unassigned.length,
+      sum_billable: unassigned.reduce((s, t) => s + t.face_value, 0),
+    });
+  }
+
+  return buckets;
+}
+
+function EwpBucket({ bucket }: { bucket: VendorEwpBucket }) {
+  const leftBorderCls =
+    bucket.kind === 'unassigned'
+      ? 'border-l-[var(--warn)]'
+      : bucket.kind === 'multiple'
+        ? 'border-l-[var(--brand-orange)]'
+        : 'border-l-[var(--amber)]';
+  const outerBorderCls =
+    bucket.kind === 'unassigned'
+      ? 'border-[var(--warn)]/30'
+      : bucket.kind === 'multiple'
+        ? 'border-[var(--brand-orange)]/30'
+        : 'border-[var(--border)]';
+
+  return (
+    <div
+      className={`rounded-md border ${outerBorderCls} bg-[var(--surface)] overflow-hidden`}
+    >
+      <div
+        className={`flex items-center justify-between gap-3 px-4 py-2.5 border-l-4 ${leftBorderCls} border-b border-b-[var(--border)]`}
+      >
+        <div className="min-w-0">
+          {bucket.kind === 'unassigned' ? (
+            <span className="font-semibold text-sm text-[var(--warn)]">
+              Unassigned to EWP
+            </span>
+          ) : bucket.kind === 'multiple' ? (
+            <>
+              <span className="font-semibold text-sm text-[var(--brand-orange)]">
+                Multiple EWPs
+              </span>
+              <span className="ml-2 text-xs text-[var(--text-muted)]">
+                Ticket spans more than one EWP
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold text-sm text-[var(--text)]">
+                EWP #{bucket.ewp_no}
+              </span>
+              <span className="ml-2 text-xs text-[var(--text-muted)]">
+                {bucket.title}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="text-xs tabular text-[var(--text-muted)] shrink-0">
+          {bucket.count} · {formatMoney(bucket.sum_billable)}
+        </div>
+      </div>
+      {bucket.kind === 'unassigned' && (
+        <div className="px-4 pt-2.5 text-[11px] text-[var(--warn)] font-medium">
+          ⚠ No WTP number yet.
+        </div>
+      )}
+      <div className="px-4 py-3 flex flex-wrap gap-1.5">
+        {bucket.tickets.map((t) => (
+          <TicketChip key={t.id} ticket={t} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -378,10 +530,15 @@ function MoneyStat({
 
 function TicketChip({ ticket }: { ticket: TicketBrief }) {
   const router = useRouter();
-  const cls =
-    ticket.status === 'invoiced'
-      ? 'border-[var(--under)] bg-[var(--under-bg)] text-[var(--under)] hover:brightness-95'
-      : 'border-[var(--over)] bg-[var(--over-bg)] text-[var(--over)] hover:brightness-95';
+  // Colour by client-side approval, not internal invoicing state — a
+  // ticket sitting at 'invoiced' with approval_status = 'Sent to Client
+  // via Portal' still isn't approved by the client and shouldn't render
+  // green. Matches Ticket Map exactly.
+  const cls = ticket.approved
+    ? 'border-[var(--under)] bg-[var(--under-bg)] text-[var(--under)] hover:brightness-95'
+    : 'border-[var(--over)] bg-[var(--over-bg)] text-[var(--over)] hover:brightness-95';
+  const approvalNote = ticket.approval_status ?? 'no approval record';
+  const label = ticket.ticket_number_short || ticket.ticket_number;
   return (
     <button
       onClick={() =>
@@ -389,10 +546,10 @@ function TicketChip({ ticket }: { ticket: TicketBrief }) {
           `/tickets?search=${encodeURIComponent(ticket.ticket_number)}`
         )
       }
-      title={`${ticket.ticket_number} · ${ticket.ticket_date} · ${formatMoney(ticket.face_value)} · ${ticket.status}`}
+      title={`${ticket.ticket_number} · ${ticket.ticket_date} · ${formatMoney(ticket.face_value)} · ${approvalNote}`}
       className={`tabular rounded border px-1.5 py-1 text-[0.7rem] font-medium ${cls}`}
     >
-      {ticket.ticket_number}
+      {label}
     </button>
   );
 }
