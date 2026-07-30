@@ -35,18 +35,23 @@ type Item = {
 type PerFileResult = {
   filename: string;
   po_number: string;
-  imported: number;
-  updated: number;
-  skipped_void: number;
+  job_prefix: string | null;
+  csv_row_count: number;
+  void_skipped: number;
+  collisions_dropped: number;
+  parse_errors: number;
+  deleted_from_db: number;
+  inserted_to_db: number;
   errors: string[];
 };
 
 type ImportResponse = {
   ok: true;
   summary: {
-    total_imported: number;
-    total_updated: number;
-    total_skipped_void: number;
+    total_deleted: number;
+    total_inserted: number;
+    total_void_skipped: number;
+    total_collisions_dropped: number;
     per_file: PerFileResult[];
   };
 };
@@ -327,10 +332,12 @@ export function CsvImportFlow({ pos }: { pos: PoOption[] }) {
       {/* Action row */}
       {items.length > 0 && !response && (
         <div className="flex items-center justify-between">
-          <div className="text-xs text-[var(--text-muted)]">
-            Importing skips <code className="font-mono">Void</code> tickets,
-            updates existing rows in place, and never overwrites a PDF-parsed
-            face value.
+          <div className="text-xs text-[var(--text-muted)] max-w-xl">
+            Import is an <span className="font-semibold">atomic per-job replace</span>:
+            every existing ticket on the file's job number is cleared, then the
+            CSV's rows are inserted. <code className="font-mono">Void</code>{' '}
+            rows (Status or CP Approval) are skipped and date-prefixed
+            duplicates are collapsed to the last row seen.
           </div>
           <button
             onClick={runImport}
@@ -350,42 +357,58 @@ export function CsvImportFlow({ pos }: { pos: PoOption[] }) {
           <div className="flex items-center gap-2 mb-3">
             <CheckCircle2 className="w-5 h-5 text-[var(--under)]" strokeWidth={2.5} />
             <div className="text-sm font-semibold text-[var(--under)]">
-              Import complete
+              Atomic replace complete
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 text-sm mb-4">
+          <div className="grid grid-cols-4 gap-4 text-sm mb-4">
             <SummaryStat
-              label="Imported (new)"
-              value={response.summary.total_imported}
+              label="Cleared"
+              value={response.summary.total_deleted}
+              muted
             />
             <SummaryStat
-              label="Updated (existing)"
-              value={response.summary.total_updated}
+              label="Inserted"
+              value={response.summary.total_inserted}
             />
             <SummaryStat
-              label="Skipped (Void)"
-              value={response.summary.total_skipped_void}
+              label="Void skipped"
+              value={response.summary.total_void_skipped}
+              muted
+            />
+            <SummaryStat
+              label="Collisions"
+              value={response.summary.total_collisions_dropped}
               muted
             />
           </div>
-          <div className="border-t border-[var(--border)] pt-3 space-y-2">
+          <div className="border-t border-[var(--border)] pt-3 space-y-3">
             {response.summary.per_file.map((r) => (
               <div key={r.filename} className="text-xs">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
                     <span className="font-mono font-medium">{r.filename}</span>
                     <span className="text-[var(--text-muted)]"> → </span>
                     <span className="font-mono">{r.po_number}</span>
+                    {r.job_prefix && (
+                      <span className="text-[var(--text-muted)]">
+                        {' · '}job {r.job_prefix}
+                      </span>
+                    )}
                   </div>
-                  <div className="tabular text-[var(--text-muted)]">
+                  <div className="tabular text-[var(--text-muted)] whitespace-nowrap">
+                    {r.csv_row_count} rows →{' '}
+                    <span className="text-[var(--over)] font-medium">
+                      −{r.deleted_from_db}
+                    </span>{' '}
+                    /{' '}
                     <span className="text-[var(--under)] font-medium">
-                      +{r.imported}
-                    </span>{' '}
-                    new ·{' '}
-                    <span className="text-[var(--text)] font-medium">
-                      {r.updated}
-                    </span>{' '}
-                    updated{r.skipped_void > 0 && ` · ${r.skipped_void} void`}
+                      +{r.inserted_to_db}
+                    </span>
+                    {r.void_skipped > 0 && ` · ${r.void_skipped} void`}
+                    {r.collisions_dropped > 0 &&
+                      ` · ${r.collisions_dropped} dup`}
+                    {r.parse_errors > 0 &&
+                      ` · ${r.parse_errors} parse err`}
                   </div>
                 </div>
                 {r.errors.length > 0 && (

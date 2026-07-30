@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { ewpForTicket } from '@/lib/ewp/ticket-ewp';
+import {
+  ewpForTicket,
+  stripDatePrefix,
+  jobFromTicketNumber,
+} from '@/lib/ewp/ticket-ewp';
 import { APPROVED_LABEL } from '@/lib/ticketMap.shared';
 
 export const maxDuration = 30;
@@ -23,9 +27,13 @@ type ImportBody = {
 type PerFileResult = {
   filename: string;
   po_number: string;
-  imported: number;
-  updated: number;
-  skipped_void: number;
+  job_prefix: string | null;
+  csv_row_count: number;
+  void_skipped: number;
+  collisions_dropped: number;
+  parse_errors: number;
+  deleted_from_db: number;
+  inserted_to_db: number;
   errors: string[];
 };
 
@@ -74,7 +82,6 @@ function parseCsv(text: string): string[][] {
     }
   }
 
-  // Flush the last field / row if the file didn't end with a newline.
   if (field.length > 0 || row.length > 0) {
     row.push(field);
     rows.push(row);
@@ -139,6 +146,16 @@ function parseDate(raw: string): string | null {
 // -----------------------------------------------------------------------------
 // POST handler
 // -----------------------------------------------------------------------------
+//
+// Per Aimsio CSV: parse rows, normalize each ticket_number (strip any leading
+// date prefix), skip Voids (Status = 'Void' OR CP Approval Status = 'Void'),
+// dedupe collisions within the CSV (last occurrence wins, prior ones logged),
+// then call `sync_job_tickets` RPC — one atomic DELETE-then-INSERT per job.
+// The RPC clears every stale row that used to belong to this job (regardless of
+// which PO it currently lives on) and inserts exactly what the CSV says. That
+// is what fixes both failure modes: ballooning ticket counts (stale rows
+// surviving) and stalling counts (new upload never touching legacy rows on the
+// wrong PO).
 
 export async function POST(req: Request) {
   const supabase = createClient();
@@ -157,7 +174,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // Preload every PO once so the loop below stays chatter-free.
   const uniquePoNumbers = Array.from(new Set(body.files.map((f) => f.po_number)));
   const { data: poRows, error: poErr } = await supabase
     .from('service_pos')
@@ -174,17 +190,22 @@ export async function POST(req: Request) {
   );
 
   const perFile: PerFileResult[] = [];
-  let totalImported = 0;
-  let totalUpdated = 0;
-  let totalSkippedVoid = 0;
+  let totalDeleted = 0;
+  let totalInserted = 0;
+  let totalVoids = 0;
+  let totalCollisions = 0;
 
   for (const file of body.files) {
     const result: PerFileResult = {
       filename: file.filename,
       po_number: file.po_number,
-      imported: 0,
-      updated: 0,
-      skipped_void: 0,
+      job_prefix: null,
+      csv_row_count: 0,
+      void_skipped: 0,
+      collisions_dropped: 0,
+      parse_errors: 0,
+      deleted_from_db: 0,
+      inserted_to_db: 0,
       errors: [],
     };
 
@@ -234,6 +255,7 @@ export async function POST(req: Request) {
       'CP Approval',
       'CP Status'
     );
+    const iStatus = findCol(headers, 'Status', 'Ticket Status');
 
     if (iTicket < 0 || iDate < 0 || iBillable < 0 || iOffice < 0) {
       result.errors.push(
@@ -243,116 +265,152 @@ export async function POST(req: Request) {
       continue;
     }
 
+    // Walk the rows once: normalize, filter Voids, dedupe collisions.
+    // Collision policy: last occurrence wins (matches how a spreadsheet user
+    // reads down the file), and every prior occurrence is logged with both
+    // the raw and normalized numbers so Mike can see which ones collapsed.
+    const byNumber = new Map<string, {
+      ticket_number: string;
+      ticket_date: string;
+      face_value: number;
+      status: 'invoiced' | 'pending';
+      approval_status: string;
+      ewp_no: number | null;
+    }>();
+
+    result.csv_row_count = rows.length - 1;
+
     for (let r = 1; r < rows.length; r++) {
       const row = rows[r];
 
+      // Void filter — either column, either row-level state.
       const cpRaw = iCp >= 0 ? (row[iCp] ?? '').trim() : '';
-      if (cpRaw === 'Void') {
-        result.skipped_void++;
-        totalSkippedVoid++;
+      const statusRaw = iStatus >= 0 ? (row[iStatus] ?? '').trim() : '';
+      if (cpRaw === 'Void' || statusRaw === 'Void') {
+        result.void_skipped++;
+        totalVoids++;
         continue;
       }
 
-      const ticketNumber = (row[iTicket] ?? '').trim();
-      if (!ticketNumber) continue;
+      const rawTicket = (row[iTicket] ?? '').trim();
+      if (!rawTicket) continue;
+
+      const normTicket = stripDatePrefix(rawTicket);
 
       const ticketDate = parseDate(row[iDate] ?? '');
       if (!ticketDate) {
+        result.parse_errors++;
         result.errors.push(
-          `Row ${r + 1} (${ticketNumber}): unparseable ticket date '${row[iDate]}'`
+          `Row ${r + 1} (${rawTicket}): unparseable ticket date '${row[iDate]}'`
         );
         continue;
       }
 
-      const faceValue = parseMoney(row[iBillable] ?? '');
-      if (faceValue === null) {
+      const faceValueParsed = parseMoney(row[iBillable] ?? '');
+      if (faceValueParsed === null || faceValueParsed < 0) {
+        result.parse_errors++;
         result.errors.push(
-          `Row ${r + 1} (${ticketNumber}): unparseable billable '${row[iBillable]}'`
+          `Row ${r + 1} (${rawTicket}): unparseable/negative billable '${row[iBillable]}'`
         );
         continue;
       }
+      const faceValue = faceValueParsed;
 
-      const approvalStatus = (row[iOffice] ?? '').trim() || null;
-      const ewpNo = ewpForTicket(file.po_number, ticketNumber);
-      // Translate Aimsio's Office Approval Status into our internal
-      // invoicing state. Only "Approved by Client/PM" is invoiceable;
-      // everything else — Sent to Client via Portal, Approved to Send,
-      // See Notes, blank — is pending sign-off.
+      const approvalStatus = (row[iOffice] ?? '').trim();
+      // Aimsio's "Approved by Client/PM" is the only invoiceable state.
       const newStatus: 'invoiced' | 'pending' =
         approvalStatus === APPROVED_LABEL ? 'invoiced' : 'pending';
 
-      // Ticket numbers are globally unique in this schema — look up without
-      // a PO filter so a status-only row inserted for the wrong PO gets caught.
-      const { data: existing, error: existErr } = await supabase
-        .from('tickets')
-        .select('id, po_id, source_type')
-        .eq('ticket_number', ticketNumber)
-        .maybeSingle();
-      if (existErr) {
+      const ewpNo = ewpForTicket(file.po_number, normTicket);
+
+      if (byNumber.has(normTicket)) {
+        const prior = byNumber.get(normTicket)!;
+        result.collisions_dropped++;
+        totalCollisions++;
         result.errors.push(
-          `Row ${r + 1} (${ticketNumber}): lookup failed — ${existErr.message}`
+          `Row ${r + 1}: '${rawTicket}' collides with earlier row for '${normTicket}' ` +
+            `(prior $${prior.face_value.toFixed(2)} on ${prior.ticket_date}, ` +
+            `keeping this row $${faceValue.toFixed(2)} on ${ticketDate})`
         );
-        continue;
       }
 
-      if (existing) {
-        if (existing.po_id !== poId) {
-          result.errors.push(
-            `Row ${r + 1} (${ticketNumber}): already on a different PO in the tracker; leaving untouched.`
-          );
-          continue;
-        }
-
-        // Only refresh face_value + date on rows that we ourselves imported
-        // from a status CSV. A real PDF's line-item total is authoritative.
-        const patch: Record<string, unknown> = {
-          approval_status: approvalStatus,
-          ewp_no: ewpNo,
-          status: newStatus,
-        };
-        if (existing.source_type === 'aimsio_status') {
-          patch.face_value = faceValue;
-          patch.computed_total = faceValue;
-          patch.ticket_date = ticketDate;
-        }
-
-        const { error: upErr } = await supabase
-          .from('tickets')
-          .update(patch)
-          .eq('id', existing.id);
-        if (upErr) {
-          result.errors.push(
-            `Row ${r + 1} (${ticketNumber}): update failed — ${upErr.message}`
-          );
-          continue;
-        }
-        result.updated++;
-        totalUpdated++;
-      } else {
-        const { error: insErr } = await supabase.from('tickets').insert({
-          po_id: poId,
-          ticket_number: ticketNumber,
-          ticket_date: ticketDate,
-          source_type: 'aimsio_status',
-          is_master: false,
-          face_value: faceValue,
-          computed_total: faceValue,
-          reconciled: true,
-          status: newStatus,
-          approval_status: approvalStatus,
-          ewp_no: ewpNo,
-          created_by: user.id,
-        });
-        if (insErr) {
-          result.errors.push(
-            `Row ${r + 1} (${ticketNumber}): insert failed — ${insErr.message}`
-          );
-          continue;
-        }
-        result.imported++;
-        totalImported++;
-      }
+      byNumber.set(normTicket, {
+        ticket_number: normTicket,
+        ticket_date: ticketDate,
+        face_value: faceValue,
+        status: newStatus,
+        approval_status: approvalStatus,
+        ewp_no: ewpNo,
+      });
     }
+
+    const tickets = Array.from(byNumber.values());
+    if (tickets.length === 0) {
+      result.errors.push(
+        'No valid ticket rows survived Void filtering, dedup, or field parsing — skipping atomic replace to protect existing data.'
+      );
+      perFile.push(result);
+      continue;
+    }
+
+    // Every surviving ticket must share the same job prefix — otherwise the
+    // atomic replace would only clear one of them. If the CSV mixes SL26-101
+    // and SL26-095 rows the operator uploaded the wrong file for the PO.
+    const jobPrefixes = new Set(
+      tickets
+        .map((t) => jobFromTicketNumber(t.ticket_number))
+        .filter((p): p is string => p !== null)
+    );
+    if (jobPrefixes.size === 0) {
+      result.errors.push(
+        'No SL26-NNN job prefix found on any ticket — CSV does not look like an Aimsio Office Approval export.'
+      );
+      perFile.push(result);
+      continue;
+    }
+    if (jobPrefixes.size > 1) {
+      result.errors.push(
+        `CSV mixes multiple job prefixes (${Array.from(jobPrefixes).join(', ')}) — refusing atomic replace.`
+      );
+      perFile.push(result);
+      continue;
+    }
+    const jobPrefix = Array.from(jobPrefixes)[0];
+    result.job_prefix = jobPrefix;
+
+    // Serialize each ticket's ewp_no as a string ('' when null) so the RPC's
+    // `nullif` + cast pair reads it back cleanly. All other fields are strings.
+    const payload = tickets.map((t) => ({
+      ticket_number: t.ticket_number,
+      ticket_date: t.ticket_date,
+      face_value: String(t.face_value),
+      status: t.status,
+      approval_status: t.approval_status,
+      ewp_no: t.ewp_no == null ? '' : String(t.ewp_no),
+    }));
+
+    const { data: rpcData, error: rpcErr } = await supabase.rpc(
+      'sync_job_tickets',
+      {
+        p_job_prefix: jobPrefix,
+        p_po_id: poId,
+        p_tickets: payload,
+        p_created_by: user.id,
+      }
+    );
+    if (rpcErr) {
+      result.errors.push(`Atomic replace failed: ${rpcErr.message}`);
+      perFile.push(result);
+      continue;
+    }
+
+    // The RPC returns TABLE(deleted_count int, inserted_count int) — the
+    // Supabase client hands that back as an array with one row.
+    const rpcRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    result.deleted_from_db = Number(rpcRow?.deleted_count ?? 0);
+    result.inserted_to_db = Number(rpcRow?.inserted_count ?? 0);
+    totalDeleted += result.deleted_from_db;
+    totalInserted += result.inserted_to_db;
 
     perFile.push(result);
   }
@@ -360,9 +418,10 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     summary: {
-      total_imported: totalImported,
-      total_updated: totalUpdated,
-      total_skipped_void: totalSkippedVoid,
+      total_deleted: totalDeleted,
+      total_inserted: totalInserted,
+      total_void_skipped: totalVoids,
+      total_collisions_dropped: totalCollisions,
       per_file: perFile,
     },
   });
