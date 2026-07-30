@@ -282,9 +282,15 @@ export function ScheduleView({
   useEffect(() => setEvents(initialEvents), [initialEvents]);
 
   const monthRange = useMemo(() => {
+    // View floor at 2026-07-01: any legacy ship dates in June or earlier
+    // stay in the DB (shipping cost tracking still needs them) but the
+    // schedule board never opens a column for them.
+    const SCHEDULE_FLOOR = '2026-07-01';
     const dates = packages.map((p) => p.planned_ship_date).filter((d): d is string => !!d).sort();
-    let start = dates[0] || '2026-07-01';
-    let end = dates[dates.length - 1] || '2026-07-01';
+    let start = dates[0] || SCHEDULE_FLOOR;
+    let end = dates[dates.length - 1] || SCHEDULE_FLOOR;
+    if (start < SCHEDULE_FLOOR) start = SCHEDULE_FLOOR;
+    if (end < SCHEDULE_FLOOR) end = SCHEDULE_FLOOR;
     let sy = +start.slice(0, 4);
     let sm = +start.slice(5, 7) - 1;
     let ey = +end.slice(0, 4);
