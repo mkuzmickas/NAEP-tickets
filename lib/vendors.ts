@@ -160,7 +160,18 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       face_value: Number(t.face_value),
       status: t.status,
       approval_status: t.approval_status,
-      approved: t.approval_status === APPROVED_LABEL,
+      // A ticket reads as approved (green chip) when EITHER:
+      //   1. Aimsio explicitly stamps it "Approved by Client/PM", OR
+      //   2. It's a legacy upload (PDF-parsed / bulk SQL load) with a
+      //      null approval_status — those get the uploads-are-approved
+      //      default, so we honour that here.
+      // Aimsio rows that carry a non-null, non-approved status (e.g.
+      // "Sent to Client via Portal") never read as approved regardless
+      // of the internal 'invoiced' state, so a bug elsewhere can't paint
+      // a red row green.
+      approved:
+        t.approval_status === APPROVED_LABEL ||
+        (t.approval_status == null && t.status === 'invoiced'),
       ewp_no: isMultiple ? null : codeEwp,
       is_multiple_ewp: isMultiple,
     });
