@@ -1,5 +1,27 @@
 # Decisions
 
+## 2026-08-04 — Date-prefixed Aimsio ticket numbers are distinct tickets
+
+**Correction to the 2026-07-29 entry.** The earlier atomic-replace design
+said date-prefixed variants like `06-05-SL26-010-000-001` were the "same
+underlying ticket" as the plain `SL26-010-000-001` and should be collapsed
+by normalizing away the date prefix. That was wrong. In the SL26-010 CSV
+those three rows all carry their own distinct `WMT/Master WMT GUID`, their
+own workday, and their own dollar total — Aimsio uses the date prefix to
+distinguish separate tickets that reuse a base number, not to mark
+duplicates. Collapsing them by normalized name was silently dropping ~$25k
+of real approved work per import.
+
+**Fix.** `ticket_number` is now stored verbatim from the CSV, including any
+Aimsio date prefix. `stripDatePrefix` is still called at read time — but
+only for job-prefix detection and EWP lookup, both of which need the
+`SL26-NNN` core regardless of what comes before it. The atomic DELETE
+still uses `LIKE '%SL26-NNN-%'`, so it clears both the plain and the
+prefixed forms in one pass; the INSERT then writes each row back under its
+own raw name. Collisions on the raw name (a genuine duplicate row within
+one CSV) remain last-wins with a logged warning, but that path is now
+rare.
+
 ## 2026-07-29 — Aimsio CSV import: atomic replace-per-job
 
 **What the current import does wrong.** The Aimsio CSV import route

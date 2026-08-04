@@ -265,10 +265,14 @@ export async function POST(req: Request) {
       continue;
     }
 
-    // Walk the rows once: normalize, filter Voids, dedupe collisions.
-    // Collision policy: last occurrence wins (matches how a spreadsheet user
-    // reads down the file), and every prior occurrence is logged with both
-    // the raw and normalized numbers so Mike can see which ones collapsed.
+    // Walk the rows once: filter Voids, then key by the raw ticket_number
+    // exactly as Aimsio wrote it. Rows that share a base number but carry
+    // an Aimsio date prefix (06-05-SL26-010-000-001 alongside plain
+    // SL26-010-000-001) are DISTINCT tickets in Aimsio — each has its own
+    // WMT GUID and its own workday — so we keep them all. Job detection +
+    // EWP lookup still normalize via stripDatePrefix to reach the SL26-NNN
+    // core. Collisions on the raw name (true duplicates within the CSV)
+    // are rare but still last-write-wins with a logged warning.
     const byNumber = new Map<string, {
       ticket_number: string;
       ticket_date: string;
@@ -295,7 +299,9 @@ export async function POST(req: Request) {
       const rawTicket = (row[iTicket] ?? '').trim();
       if (!rawTicket) continue;
 
-      const normTicket = stripDatePrefix(rawTicket);
+      // Stored ticket_number is the raw CSV value. Only strip the date
+      // prefix when we need to reach the SL26-NNN core for job/EWP lookup.
+      const lookupTicket = stripDatePrefix(rawTicket);
 
       const ticketDate = parseDate(row[iDate] ?? '');
       if (!ticketDate) {
@@ -321,21 +327,21 @@ export async function POST(req: Request) {
       const newStatus: 'invoiced' | 'pending' =
         approvalStatus === APPROVED_LABEL ? 'invoiced' : 'pending';
 
-      const ewpNo = ewpForTicket(file.po_number, normTicket);
+      const ewpNo = ewpForTicket(file.po_number, lookupTicket);
 
-      if (byNumber.has(normTicket)) {
-        const prior = byNumber.get(normTicket)!;
+      if (byNumber.has(rawTicket)) {
+        const prior = byNumber.get(rawTicket)!;
         result.collisions_dropped++;
         totalCollisions++;
         result.errors.push(
-          `Row ${r + 1}: '${rawTicket}' collides with earlier row for '${normTicket}' ` +
+          `Row ${r + 1}: '${rawTicket}' appears twice in the CSV ` +
             `(prior $${prior.face_value.toFixed(2)} on ${prior.ticket_date}, ` +
             `keeping this row $${faceValue.toFixed(2)} on ${ticketDate})`
         );
       }
 
-      byNumber.set(normTicket, {
-        ticket_number: normTicket,
+      byNumber.set(rawTicket, {
+        ticket_number: rawTicket,
         ticket_date: ticketDate,
         face_value: faceValue,
         status: newStatus,
