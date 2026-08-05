@@ -96,17 +96,50 @@ export function normalize(parsed: ParsedTicket): {
 }
 
 function validateEnergetic(items: ParsedLineItem[], warnings: string[]) {
+  // Energetic tickets — a single hydrovac BOL, a single water-haul BOL, or
+  // an MT-prefixed master that consolidates 5-15 BOLs (sometimes hydrovac +
+  // water haul mixed). Line-item shape is NOT rigid: one line per
+  // (work-type, rate) group. What we DO catch is the fudge line the LLM
+  // used to invent when the prompt forced sum(items) == face_value —
+  // strip it out and re-surface the real mismatch so the UI shows it.
+  const fudgePattern = /roundin|reconcil|adjustment|fudge|balancing|difference|discrepan|plug/i;
+  const fudge = items.filter((li) => fudgePattern.test(li.description || ''));
+  if (fudge.length > 0) {
+    warnings.push(
+      `Removed ${fudge.length} fabricated reconciliation line(s) from the parse — these are LLM fudges, not real charges on the PDF: ${fudge
+        .map((f) => `"${f.description}" ($${f.source_amount.toFixed(2)})`)
+        .join(', ')}. The visible face-value gap that surfaces after removal is the real parser gap; investigate rather than adding it back.`
+    );
+    // Remove in place — the caller passes items by reference from normalize().
+    let write = 0;
+    for (let read = 0; read < items.length; read++) {
+      if (!fudgePattern.test(items[read].description || '')) {
+        items[write++] = items[read];
+      }
+    }
+    items.length = write;
+  }
+
   const equipment = items.filter((li) => li.category === 'equipment').length;
   const labour = items.filter((li) => li.category === 'labour').length;
-  if (equipment !== 1) {
+  if (equipment < 1) {
     warnings.push(
-      `Energetic format expects exactly 1 equipment line (hydrovac hours incl. fuel surcharge); got ${equipment}.`
+      `Energetic ticket has no Equipment line — every Energetic BOL bills at least one truck (Hydro Vac, Tank Truck, etc.).`
     );
   }
-  if (labour > 1) {
-    warnings.push(
-      `Energetic format expects at most 1 labour line (swamper); got ${labour}.`
+  if (labour < 1 && equipment >= 1) {
+    // Water-haul-only BOLs sometimes ship without a swamper; only flag when
+    // there's a hydrovac line present (which always pairs with a swamper).
+    const hasHydrovac = items.some(
+      (li) =>
+        li.category === 'equipment' &&
+        /hydro\s*vac|vacuum\s*truck/i.test(li.description || '')
     );
+    if (hasHydrovac) {
+      warnings.push(
+        `Energetic hydrovac ticket has no Swamper labour line — every hydrovac BOL bills a swamper alongside the truck.`
+      );
+    }
   }
 }
 
