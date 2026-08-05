@@ -144,6 +144,20 @@ export function ScheduleView({
   const [panelOpen, setPanelOpen] = useState(true);
   const [showPackages, setShowPackages] = useState(true);
   const [showWalkdowns, setShowWalkdowns] = useState(true);
+  // MODs-only filter: hides every package whose tag doesn't start with 'MOD'
+  // (Alstar module deliveries). Applies to calendar chips, the unscheduled
+  // rail on the left, the month "shipping" counts, and search — everything
+  // driven by the packages array. Persistence + drag mutations still key on
+  // pkg.id so they work regardless of what's visible.
+  const [modsOnly, setModsOnly] = useState(false);
+  const isModPackage = useCallback(
+    (p: SchedulePackage) => p.tag.trim().toUpperCase().startsWith('MOD'),
+    []
+  );
+  const visiblePackages = useMemo(
+    () => (modsOnly ? packages.filter(isModPackage) : packages),
+    [packages, modsOnly, isModPackage]
+  );
   const [walkdownModal, setWalkdownModal] = useState<WalkdownModalState | null>(null);
   const [printModal, setPrintModal] = useState<{ from: string; to: string } | null>(null);
   const [printRange, setPrintRange] = useState<{ from: string; to: string } | null>(null);
@@ -157,7 +171,7 @@ export function ScheduleView({
     if (!term) return [];
     const out: SearchMatch[] = [];
     const seenGroups = new Set<string>();
-    packages.forEach((p) => {
+    visiblePackages.forEach((p) => {
       const hit = p.tag.toLowerCase().includes(term) || p.ewp.toLowerCase().includes(term);
       if (!hit) return;
       if (p.convoy_group) {
@@ -176,7 +190,7 @@ export function ScheduleView({
     });
     out.sort((a, b) => (a.date ?? 'zzzz').localeCompare(b.date ?? 'zzzz') || a.matchId.localeCompare(b.matchId));
     return out;
-  }, [packages, walkdowns, searchTerm]);
+  }, [visiblePackages, walkdowns, searchTerm]);
 
   useEffect(() => {
     setCurrentMatchIndex(0);
@@ -323,7 +337,7 @@ export function ScheduleView({
   function unitsForDate(iso: string): Unit[] {
     const out: Unit[] = [];
     const seen = new Set<string>();
-    packages
+    visiblePackages
       .filter((p) => p.planned_ship_date === iso)
       .forEach((p) => {
         if (p.convoy_group) {
@@ -341,7 +355,7 @@ export function ScheduleView({
   const unscheduledUnits: Unit[] = useMemo(() => {
     const out: Unit[] = [];
     const seen = new Set<string>();
-    packages.filter((p) => !p.planned_ship_date).forEach((p) => {
+    visiblePackages.filter((p) => !p.planned_ship_date).forEach((p) => {
       if (p.convoy_group) {
         if (!seen.has(p.convoy_group)) {
           seen.add(p.convoy_group);
@@ -352,7 +366,7 @@ export function ScheduleView({
       }
     });
     return out;
-  }, [packages, groupMembers]);
+  }, [visiblePackages, groupMembers]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -898,6 +912,17 @@ export function ScheduleView({
             >
               {showWalkdowns ? '● ' : '○ '}Walk-downs
             </button>
+            <button
+              onClick={() => setModsOnly((v) => !v)}
+              title="Hide every non-MOD package (Alstar modules only)"
+              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors font-medium ${
+                modsOnly
+                  ? 'bg-[#D04E00] text-white border-[#D04E00]'
+                  : 'bg-white text-enbridge-black/60 border-black/20 hover:bg-black/[0.03]'
+              }`}
+            >
+              {modsOnly ? '● ' : '○ '}MODs only
+            </button>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
             <label className="text-[11px] text-enbridge-black/55">Jump to</label>
@@ -1005,7 +1030,7 @@ export function ScheduleView({
           <div className="schedule-months">
             {monthRange.map(([y, m]) => {
               const ym = keyYM(y, m);
-              const monthPackages = packages.filter((p) => p.planned_ship_date && p.planned_ship_date.slice(0, 7) === ym).length;
+              const monthPackages = visiblePackages.filter((p) => p.planned_ship_date && p.planned_ship_date.slice(0, 7) === ym).length;
               const first = new Date(y, m, 1);
               const start = new Date(first);
               start.setDate(1 - first.getDay());
