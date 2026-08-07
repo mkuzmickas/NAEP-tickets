@@ -151,7 +151,14 @@ export function ScheduleView({
   // pkg.id so they work regardless of what's visible.
   const [modsOnly, setModsOnly] = useState(false);
   const isModPackage = useCallback(
-    (p: SchedulePackage) => p.tag.trim().toUpperCase().startsWith('MOD'),
+    (p: SchedulePackage) => {
+      // Case-insensitive prefix match on 'MOD' — handles the canonical
+      // 'MOD-11113 - Ship Loose' style, tolerates a leading space, and
+      // short-circuits if tag is somehow missing during an optimistic
+      // update so a bad row never blanks the entire calendar.
+      const tag = (p.tag ?? '').toString().trim().toUpperCase();
+      return tag.startsWith('MOD');
+    },
     []
   );
   const visiblePackages = useMemo(
