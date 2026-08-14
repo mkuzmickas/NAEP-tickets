@@ -72,6 +72,13 @@ create trigger apex_line_items_updated_at
   before update on public.apex_line_items
   for each row execute function public.apex_set_updated_at();
 
+-- Table-level grants: RLS policies alone aren't enough — the PostgREST-facing
+-- roles also need SELECT/INSERT/UPDATE/DELETE privilege on the table itself.
+-- Supabase usually auto-grants these on new tables but not always; be explicit.
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.apex_pos, public.apex_line_items
+  to anon, authenticated;
+
 -- RLS: allow anon read + authenticated write (match existing service_pos pattern).
 alter table public.apex_pos        enable row level security;
 alter table public.apex_line_items enable row level security;
