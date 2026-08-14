@@ -1,10 +1,13 @@
-# Provisioning Apex vendor users
+# Provisioning Apex / Sureline vendor users
 
-Two external Apex Distribution contacts get scoped access to the Site PVF module
-only (`/pvf`) — every other authed route redirects them back to `/pvf`, and
-their sidebar is stripped down to that one link.
+**NOT SQL — do not paste into Supabase SQL editor.** This is reference for
+inviting external contacts through the Supabase dashboard.
 
-Approved emails (hardcoded in [lib/roles.ts](../../lib/roles.ts)):
+External vendors get scoped access to the Site PVF module only (`/pvf`) —
+every other authed route redirects them back to `/pvf`, and their sidebar is
+stripped down to that one link.
+
+Approved emails (hardcoded in [lib/roles.ts](lib/roles.ts)):
 
 - `jason.zaporosky@apexdistribution.com` (Apex)
 - `kurtis.favot@apexdistribution.com` (Apex)
