@@ -12,6 +12,7 @@ import {
   Truck,
   TrendingUp,
   AlertTriangle,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -30,6 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Logged Tickets', href: '/tickets', icon: Table2 },
       { label: 'Unapproved', href: '/unapproved', icon: AlertTriangle },
       { label: 'Shipping Costs', href: '/shipping-tracker', icon: Truck },
+      { label: 'Site PVF', href: '/pvf', icon: Wrench },
       { label: 'Forecast', href: '/forecast', icon: TrendingUp },
     ],
   },
