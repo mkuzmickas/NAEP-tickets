@@ -14,10 +14,14 @@ export type UserRole = 'internal' | 'apex_vendor';
  * Hard allow-list of emails that get apex_vendor role automatically, no
  * user_metadata editing needed. Keep this list tight — anyone here has read
  * + write access to every apex_line_items row (they can tag ship dates).
+ *
+ * Not restricted by domain — Sureline personnel are on the same allow-list
+ * because they coordinate the same shipments.
  */
 const APEX_VENDOR_EMAILS: ReadonlySet<string> = new Set([
   'jason.zaporosky@apexdistribution.com',
   'kurtis.favot@apexdistribution.com',
+  'mmaybin@surelineprojects.ca',
 ]);
 
 function normalizeEmail(email: string | undefined | null): string {

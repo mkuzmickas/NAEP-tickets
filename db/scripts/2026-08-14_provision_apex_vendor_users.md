@@ -6,8 +6,9 @@ their sidebar is stripped down to that one link.
 
 Approved emails (hardcoded in [lib/roles.ts](../../lib/roles.ts)):
 
-- `jason.zaporosky@apexdistribution.com`
-- `kurtis.favot@apexdistribution.com`
+- `jason.zaporosky@apexdistribution.com` (Apex)
+- `kurtis.favot@apexdistribution.com` (Apex)
+- `mmaybin@surelineprojects.ca` (Sureline — coordinates the same shipments)
 
 If either of these emails is registered in Supabase Auth, the app treats them
 as `apex_vendor` automatically — no metadata editing needed.
