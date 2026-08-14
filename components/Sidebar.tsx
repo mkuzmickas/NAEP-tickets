@@ -15,11 +15,12 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import type { UserRole } from '@/lib/roles';
 
 type NavItem = { label: string; href: string; icon: LucideIcon };
 type NavGroup = { label: string; items: NavItem[] };
 
-const NAV_GROUPS: NavGroup[] = [
+const INTERNAL_NAV: NavGroup[] = [
   {
     label: 'Overview',
     items: [{ label: 'Dashboard', href: '/', icon: LayoutDashboard }],
@@ -48,32 +49,42 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+const APEX_VENDOR_NAV: NavGroup[] = [
+  {
+    label: 'Apex Distribution',
+    items: [{ label: 'Site PVF', href: '/pvf', icon: Wrench }],
+  },
+];
+
 function isActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(href + '/');
 }
 
-export function Sidebar() {
+export function Sidebar({ role = 'internal' }: { role?: UserRole }) {
   const pathname = usePathname();
+  const isVendor = role === 'apex_vendor';
+  const nav = isVendor ? APEX_VENDOR_NAV : INTERNAL_NAV;
+  const homeHref = isVendor ? '/pvf' : '/';
 
   return (
     <aside className="w-60 shrink-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col overflow-hidden print:hidden">
       <div className="h-1 bg-enbridge-yellow shrink-0" />
 
       <Link
-        href="/"
+        href={homeHref}
         className="block px-5 py-4 border-b border-[var(--border)] hover:bg-[var(--surface-2)]"
       >
         <div className="text-[13px] font-semibold tracking-tight leading-tight text-[var(--text)]">
-          NAEP · Field Cost
+          {isVendor ? 'Apex · Aitken Creek' : 'NAEP · Field Cost'}
         </div>
         <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">
-          Tracker
+          {isVendor ? 'PVF Ship Dates' : 'Tracker'}
         </div>
       </Link>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {NAV_GROUPS.map((group) => (
+        {nav.map((group) => (
           <div key={group.label} className="mb-5 last:mb-0">
             <div className="px-2 pb-1.5 text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
               {group.label}
@@ -102,7 +113,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-[var(--border)] px-5 py-3 text-[10px] text-[var(--text-muted)]">
-        Aitken Creek Expansion
+        {isVendor ? 'Aitken Creek Expansion · Vendor Access' : 'Aitken Creek Expansion'}
       </div>
     </aside>
   );
