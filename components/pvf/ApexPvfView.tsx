@@ -10,6 +10,7 @@ import {
   CalendarDays,
   PackageCheck,
   Truck,
+  Download,
 } from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import {
@@ -26,6 +27,7 @@ import {
 import { formatMoney } from '@/lib/money';
 import type { ApexData, ApexPo, ApexLineItem } from '@/lib/apex';
 import { ApexCalendarView } from '@/components/pvf/ApexCalendarView';
+import { buildApexHtmlExport } from '@/lib/apexHtmlExport';
 
 type SortField = 'line_number' | 'size' | 'description' | 'quantity' | 'amount' | 'ship_date';
 type SortDir = 'asc' | 'desc';
@@ -41,6 +43,21 @@ function formatDate(iso: string | null): string {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-');
   return `${y}-${m}-${d}`;
+}
+
+/** Compact "Ships" summary for a PO card header. */
+function formatShipRange(lines: ApexLineItem[]): string {
+  const dates = lines.map((l) => l.ship_date).filter((d): d is string => !!d);
+  if (dates.length === 0) return '—';
+  const sorted = [...dates].sort();
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  if (min === max) return min;
+  // Compact form: same year → drop year on the max side
+  const [minY, minM, minD] = min.split('-');
+  const [maxY, maxM, maxD] = max.split('-');
+  if (minY === maxY) return `${min} → ${maxM}-${maxD}`;
+  return `${min} → ${max}`;
 }
 
 export function ApexPvfView({ data }: { data: ApexData }) {
@@ -141,6 +158,21 @@ export function ApexPvfView({ data }: { data: ApexData }) {
     setExpanded(new Set());
   }
 
+  function downloadHtmlExport() {
+    const now = new Date();
+    const html = buildApexHtmlExport(data, now);
+    const stamp = now.toISOString().slice(0, 10);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aitken-creek-site-pvf-${stamp}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function applyDate(mode: 'ship' | 'received', dateOrNull: string | null) {
     if (selected.size === 0) return;
     setBusy(true);
@@ -212,6 +244,15 @@ export function ApexPvfView({ data }: { data: ApexData }) {
                   </button>
                 </>
               )}
+              <button
+                type="button"
+                onClick={downloadHtmlExport}
+                title="Download a standalone HTML snapshot for sharing"
+                className="flex items-center gap-1.5 rounded bg-enbridge-black px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export HTML
+              </button>
             </div>
           }
         />
@@ -466,6 +507,12 @@ function PoCard({
           </div>
         </button>
         <div className="flex flex-wrap items-center gap-4 text-right">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Ships</div>
+            <div className="tabular text-sm font-semibold text-[var(--text)]">
+              {formatShipRange(po.lines)}
+            </div>
+          </div>
           <div>
             <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Total</div>
             <div className="tabular text-sm font-semibold text-[var(--text)]">
