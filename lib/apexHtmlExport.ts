@@ -4,6 +4,12 @@ import type { ApexData, ApexPo, ApexLineItem } from '@/lib/apex';
  * Build a self-contained HTML document that renders the current Apex PVF
  * snapshot with no external assets — CSS is inlined. Safe to email, drop in
  * SharePoint, or open from a local drive.
+ *
+ * Each PO card is a native <details>/<summary> so the reader can collapse /
+ * expand individual POs the same way the portal's Bucket view works. Two small
+ * "Expand all" / "Collapse all" buttons at the top drive every card at once,
+ * and a tiny beforeprint listener forces every <details> open so printed /
+ * PDF'd copies always show all rows.
  */
 export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
   const money = new Intl.NumberFormat('en-CA', {
@@ -42,6 +48,7 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
     --ok: #2f7a3f;
     --ok-bg: #e6f4ea;
     --warn: #b56800;
+    --black: #1a1a1a;
   }
   * { box-sizing: border-box; }
   body {
@@ -72,6 +79,24 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
     font-size: 13px;
     margin: 0 0 16px;
   }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 16px;
+    flex-wrap: wrap;
+  }
+  .toolbar button {
+    font: inherit;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .toolbar button:hover { background: var(--surface-2); }
   .tiles {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -102,7 +127,7 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
     font-size: 11px;
     color: var(--text-muted);
   }
-  .card {
+  details.card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -110,17 +135,43 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
     overflow: hidden;
     break-inside: avoid;
   }
-  .card-head {
+  /* Hide native disclosure marker; we draw our own so it's consistent
+     between browsers (Chrome, Safari, Firefox all render the default
+     differently). */
+  details.card > summary {
+    list-style: none;
+    cursor: pointer;
     display: flex;
     justify-content: space-between;
     gap: 16px;
     align-items: flex-start;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
     background: var(--surface-2);
     flex-wrap: wrap;
+    outline: none;
   }
-  .card-head-left { min-width: 0; flex: 1; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary::marker { content: ''; }
+  details.card[open] > summary { border-bottom: 1px solid var(--border); }
+  .card-head-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+  .disclosure {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-top: 3px;
+    flex-shrink: 0;
+    transition: transform 120ms ease;
+    color: var(--text-muted);
+  }
+  details.card[open] > summary .disclosure { transform: rotate(90deg); }
+  .disclosure svg { width: 100%; height: 100%; display: block; }
+  .card-head-body { min-width: 0; }
   .card-title {
     display: flex;
     align-items: center;
@@ -158,6 +209,7 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
   .badge-brand { background: var(--brand); color: #1a1a1a; }
   .badge-info { background: var(--info-bg); color: var(--info); }
   .badge-ok { background: var(--ok-bg); color: var(--ok); }
+  .table-wrap { overflow-x: auto; }
   table {
     width: 100%;
     border-collapse: collapse;
@@ -191,7 +243,11 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
   @media print {
     body { background: white; }
     .wrap { padding: 12px; max-width: none; }
-    .card { border-color: #ccc; }
+    .toolbar { display: none; }
+    details.card { border-color: #ccc; }
+    /* Force every card open when printing so paper/PDF shows every line. */
+    details.card > summary { list-style: none; cursor: default; }
+    details.card > summary .disclosure { display: none; }
     h2 { break-after: avoid; }
   }
 </style>
@@ -203,6 +259,11 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
     Apex Distribution pipe, valves &amp; fittings scheduled for the Aitken Creek Expansion.
     Snapshot generated ${escapeHtml(generatedIso)}.
   </p>
+
+  <div class="toolbar" role="toolbar" aria-label="Card controls">
+    <button type="button" data-action="expand-all">Expand all</button>
+    <button type="button" data-action="collapse-all">Collapse all</button>
+  </div>
 
   <div class="tiles">
     <div class="tile">
@@ -247,6 +308,28 @@ export function buildApexHtmlExport(data: ApexData, generatedAt: Date): string {
   )}.
   </div>
 </div>
+<script>
+  (function () {
+    var cards = document.querySelectorAll('details.card');
+    document.querySelectorAll('.toolbar [data-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var open = btn.getAttribute('data-action') === 'expand-all';
+        cards.forEach(function (c) { c.open = open; });
+      });
+    });
+    // Always print with every card expanded, then restore the reader's state.
+    var savedState = null;
+    window.addEventListener('beforeprint', function () {
+      savedState = Array.prototype.map.call(cards, function (c) { return c.open; });
+      cards.forEach(function (c) { c.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      if (!savedState) return;
+      cards.forEach(function (c, i) { c.open = savedState[i]; });
+      savedState = null;
+    });
+  })();
+</script>
 </body>
 </html>`;
 }
@@ -258,29 +341,34 @@ function renderPoCard(po: ApexPo, money: Intl.NumberFormat): string {
     .sort((a, b) => a.line_number - b.line_number)
     .map(
       (l) => `
-    <tr>
-      <td class="right mono">${l.line_number}</td>
-      <td class="mono">${escapeHtml(l.size ?? '—')}</td>
-      <td>${escapeHtml(l.description)}</td>
-      <td class="right mono">${escapeHtml(formatQty(l.quantity, l.uom))}</td>
-      <td class="right mono">${escapeHtml(money.format(l.unit_cost))}</td>
-      <td class="right mono">${escapeHtml(money.format(l.amount))}</td>
-      <td class="mono">${l.ship_date ? `<span class="badge badge-info">${escapeHtml(l.ship_date)}</span>` : '—'}</td>
-      <td class="mono">${l.received_date ? `<span class="badge badge-ok">${escapeHtml(l.received_date)}</span>` : '—'}</td>
-    </tr>`
+      <tr>
+        <td class="right mono">${l.line_number}</td>
+        <td class="mono">${escapeHtml(l.size ?? '—')}</td>
+        <td>${escapeHtml(l.description)}</td>
+        <td class="right mono">${escapeHtml(formatQty(l.quantity, l.uom))}</td>
+        <td class="right mono">${escapeHtml(money.format(l.unit_cost))}</td>
+        <td class="right mono">${escapeHtml(money.format(l.amount))}</td>
+        <td class="mono">${l.ship_date ? `<span class="badge badge-info">${escapeHtml(l.ship_date)}</span>` : '—'}</td>
+        <td class="mono">${l.received_date ? `<span class="badge badge-ok">${escapeHtml(l.received_date)}</span>` : '—'}</td>
+      </tr>`
     )
     .join('');
 
   return `
-  <div class="card">
-    <div class="card-head">
+  <details class="card">
+    <summary>
       <div class="card-head-left">
-        <div class="card-title">
-          <span class="po-number">${escapeHtml(po.po_number)}</span>
-          <span class="badge badge-brand">${escapeHtml(po.ewp)}</span>
-          ${po.gle_package ? `<span class="badge badge-info">${escapeHtml(po.gle_package)}</span>` : ''}
+        <span class="disclosure" aria-hidden="true">
+          <svg viewBox="0 0 12 12"><path d="M4 2 l4 4 l-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div class="card-head-body">
+          <div class="card-title">
+            <span class="po-number">${escapeHtml(po.po_number)}</span>
+            <span class="badge badge-brand">${escapeHtml(po.ewp)}</span>
+            ${po.gle_package ? `<span class="badge badge-info">${escapeHtml(po.gle_package)}</span>` : ''}
+          </div>
+          ${po.description ? `<div class="desc">${escapeHtml(po.description)}</div>` : ''}
         </div>
-        ${po.description ? `<div class="desc">${escapeHtml(po.description)}</div>` : ''}
       </div>
       <div class="card-metrics">
         <div>
@@ -300,23 +388,25 @@ function renderPoCard(po: ApexPo, money: Intl.NumberFormat): string {
           <div class="metric-value">${po.lines_dated} / ${po.line_count}</div>
         </div>
       </div>
+    </summary>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="right">#</th>
+            <th>Size</th>
+            <th>Description</th>
+            <th class="right">Qty</th>
+            <th class="right">Unit cost</th>
+            <th class="right">Amount</th>
+            <th>Ship date</th>
+            <th>Received</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th class="right">#</th>
-          <th>Size</th>
-          <th>Description</th>
-          <th class="right">Qty</th>
-          <th class="right">Unit cost</th>
-          <th class="right">Amount</th>
-          <th>Ship date</th>
-          <th>Received</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
+  </details>`;
 }
 
 function shipRangeSummary(lines: ApexLineItem[]): string {
