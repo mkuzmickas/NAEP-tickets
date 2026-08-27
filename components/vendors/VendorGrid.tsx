@@ -8,11 +8,13 @@ import {
   ArrowUpRight,
   Building2,
   Plus,
+  Printer,
 } from 'lucide-react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
 import { AddPoDialog } from '@/components/vendors/AddPoDialog';
+import { PrintAllVendorsReport } from '@/components/vendors/PrintAllVendorsReport';
 import type { VendorSummary } from '@/lib/vendors';
 
 /* --------------------------------------------------------------------------
@@ -79,6 +81,8 @@ export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
   );
 
   return (
+    <>
+    <div className="no-print">
     <PageContainer>
       <div className="space-y-6">
         <PageHeader
@@ -105,13 +109,24 @@ export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
             </>
           }
           action={
-            <button
-              onClick={() => setAddPoOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-orange)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.5} />
-              Add PO
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]/40 transition-colors"
+                title="Print/save a PDF summary of every vendor and PO for supply-chain cross-reference"
+              >
+                <Printer className="h-4 w-4" strokeWidth={2.5} />
+                Print PDF
+              </button>
+              <button
+                onClick={() => setAddPoOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-orange)] text-white px-4 py-2 text-sm font-semibold hover:opacity-90"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2.5} />
+                Add PO
+              </button>
+            </div>
           }
         />
 
@@ -145,6 +160,9 @@ export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
         )}
       </div>
     </PageContainer>
+    </div>
+    <PrintAllVendorsReport vendors={vendors} />
+    </>
   );
 }
 
