@@ -13,7 +13,6 @@ import {
   TrendingUp,
   AlertTriangle,
   Wrench,
-  RefreshCw,
   type LucideIcon,
 } from 'lucide-react';
 import type { UserRole } from '@/lib/roles';
@@ -39,10 +38,7 @@ const INTERNAL_NAV: NavGroup[] = [
   },
   {
     label: 'Intake',
-    items: [
-      { label: 'Upload & Reconcile', href: '/upload', icon: Upload },
-      { label: 'Aimsio Sync', href: '/sync', icon: RefreshCw },
-    ],
+    items: [{ label: 'Upload & Reconcile', href: '/upload', icon: Upload }],
   },
   {
     label: 'Schedule',
