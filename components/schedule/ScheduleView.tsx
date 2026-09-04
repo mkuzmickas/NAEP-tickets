@@ -171,6 +171,7 @@ export function ScheduleView({
   const [searchTerm, setSearchTerm] = useState('');
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editingPkgId, setEditingPkgId] = useState<string | null>(null);
 
   type SearchMatch = { kind: 'pkg' | 'group' | 'wd'; matchId: string; date: string | null };
   const searchMatches = useMemo<SearchMatch[]>(() => {
@@ -289,6 +290,74 @@ export function ScheduleView({
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return msg;
+    }
+  }
+
+  async function saveEdit(id: string, payload: {
+    ewp: string;
+    tag: string;
+    length_ft: string;
+    width_ft: string;
+    height_ft: string;
+    weight_lbs: string;
+    rts_date: string;
+    planned_ship_date: string;
+    convoy_group: string;
+  }): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/schedule/packages/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ewp: payload.ewp,
+          tag: payload.tag,
+          length_ft: payload.length_ft ? Number(payload.length_ft) : null,
+          width_ft: payload.width_ft ? Number(payload.width_ft) : null,
+          height_ft: payload.height_ft ? Number(payload.height_ft) : null,
+          weight_lbs: payload.weight_lbs || null,
+          rts_date: payload.rts_date || null,
+          planned_ship_date: payload.planned_ship_date || null,
+          convoy_group: payload.convoy_group || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return body.error ?? `Save failed (${res.status})`;
+      }
+      const { pkg } = await res.json();
+      setPackages((prev) => prev.map((p) => (p.id === pkg.id ? {
+        ...p,
+        ewp: pkg.ewp,
+        tag: pkg.tag,
+        length_ft: pkg.length_ft == null ? null : Number(pkg.length_ft),
+        width_ft: pkg.width_ft == null ? null : Number(pkg.width_ft),
+        height_ft: pkg.height_ft == null ? null : Number(pkg.height_ft),
+        weight_lbs: pkg.weight_lbs,
+        rts_date: pkg.rts_date,
+        planned_ship_date: pkg.planned_ship_date,
+        convoy_group: pkg.convoy_group,
+        is_rack: pkg.is_rack,
+        is_over_height: pkg.is_over_height,
+      } : p)));
+      setEditingPkgId(null);
+      return null;
+    } catch (e: unknown) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function deletePkg(id: string): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/schedule/packages/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return body.error ?? `Delete failed (${res.status})`;
+      }
+      setPackages((prev) => prev.filter((p) => p.id !== id));
+      setEditingPkgId(null);
+      return null;
+    } catch (e: unknown) {
+      return e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -825,9 +894,9 @@ export function ScheduleView({
             ) : (
               unscheduledUnits.map((u) =>
                 u.kind === 'item' ? (
-                  <Chip key={u.pkg.id} pkg={u.pkg} inTray onDragStart={(id) => { setDragId(id); setDragGroup(null); }} onDragEnd={() => { setDragId(null); setDragGroup(null); }} />
+                  <Chip key={u.pkg.id} pkg={u.pkg} inTray onDragStart={(id) => { setDragId(id); setDragGroup(null); }} onDragEnd={() => { setDragId(null); setDragGroup(null); }} onEdit={setEditingPkgId} />
                 ) : (
-                  <GroupChip key={u.group} group={u.group} members={u.members} inTray onDragStart={(g) => { setDragGroup(g); setDragId(null); }} onDragEnd={() => { setDragId(null); setDragGroup(null); }} />
+                  <GroupChip key={u.group} group={u.group} members={u.members} inTray onDragStart={(g) => { setDragGroup(g); setDragId(null); }} onDragEnd={() => { setDragId(null); setDragGroup(null); }} onEdit={setEditingPkgId} />
                 )
               )
             )}
@@ -1117,6 +1186,7 @@ export function ScheduleView({
                           onDragEnd={() => { setDragId(null); setDragGroup(null); }}
                           onCreateWalkdown={openCreateWalkdown}
                           onEditWalkdown={openEditWalkdown}
+                          onEditPkg={setEditingPkgId}
                         />
                       );
                     })}
@@ -1186,6 +1256,21 @@ export function ScheduleView({
           onSave={addPackage}
         />
       )}
+
+      {editingPkgId && (() => {
+        const pkg = packages.find((p) => p.id === editingPkgId);
+        if (!pkg) return null;
+        return (
+          <EditPackageModal
+            pkg={pkg}
+            existingEwps={existingEwps}
+            existingGroups={existingGroups}
+            onCancel={() => setEditingPkgId(null)}
+            onSave={(payload) => saveEdit(pkg.id, payload)}
+            onDelete={() => deletePkg(pkg.id)}
+          />
+        );
+      })()}
     </div>
     </SearchContext.Provider>
   );
@@ -1371,6 +1456,222 @@ function AddPackageModal({
           >
             {saving ? 'Saving…' : 'Add package'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditPackageModal({
+  pkg, existingEwps, existingGroups, onCancel, onSave, onDelete,
+}: {
+  pkg: SchedulePackage;
+  existingEwps: string[];
+  existingGroups: string[];
+  onCancel: () => void;
+  onSave: (payload: {
+    ewp: string; tag: string;
+    length_ft: string; width_ft: string; height_ft: string;
+    weight_lbs: string;
+    rts_date: string; planned_ship_date: string;
+    convoy_group: string;
+  }) => Promise<string | null>;
+  onDelete: () => Promise<string | null>;
+}) {
+  const [form, setForm] = useState({
+    ewp: pkg.ewp,
+    ewpMode: (existingEwps.includes(pkg.ewp) ? 'existing' : 'new') as 'existing' | 'new',
+    tag: pkg.tag,
+    length_ft: pkg.length_ft == null ? '' : String(pkg.length_ft),
+    width_ft: pkg.width_ft == null ? '' : String(pkg.width_ft),
+    height_ft: pkg.height_ft == null ? '' : String(pkg.height_ft),
+    weight_lbs: pkg.weight_lbs ?? '',
+    rts_date: pkg.rts_date ?? '',
+    planned_ship_date: pkg.planned_ship_date ?? '',
+    convoy_group: pkg.convoy_group ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSave() {
+    if (!form.ewp.trim()) { setError('EWP is required.'); return; }
+    if (!form.tag.trim()) { setError('Tag / description is required.'); return; }
+    setSaving(true);
+    setError('');
+    const err = await onSave({
+      ewp: form.ewp.trim(),
+      tag: form.tag.trim(),
+      length_ft: form.length_ft,
+      width_ft: form.width_ft,
+      height_ft: form.height_ft,
+      weight_lbs: form.weight_lbs.trim(),
+      rts_date: form.rts_date,
+      planned_ship_date: form.planned_ship_date,
+      convoy_group: form.convoy_group.trim(),
+    });
+    setSaving(false);
+    if (err) setError(err);
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError('');
+    const err = await onDelete();
+    setDeleting(false);
+    if (err) { setError(err); setConfirmDelete(false); }
+  }
+
+  const inputCls = 'w-full rounded border border-black/20 px-2 py-1.5 text-sm focus:outline-none focus:border-enbridge-black';
+  const labelCls = 'block text-[10px] font-semibold text-enbridge-black/70 uppercase tracking-wide mb-1';
+
+  return (
+    <div
+      className="schedule-print-modal fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-black/10">
+          <h3 className="text-sm font-semibold">Edit package</h3>
+          <div className="text-[11px] text-enbridge-black/55 mt-0.5">
+            Clear Planned Ship to return it to the Unscheduled tray. Height clears to remove the OVER-HT flag on drop-trailer loads.
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className={labelCls}>EWP</label>
+            <div className="flex gap-2">
+              {form.ewpMode === 'existing' ? (
+                <select
+                  value={form.ewp}
+                  onChange={(e) => setForm({ ...form, ewp: e.target.value })}
+                  className={`${inputCls} bg-white`}
+                >
+                  {existingEwps.map((e) => <option key={e} value={e}>{e}</option>)}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={form.ewp}
+                  onChange={(e) => setForm({ ...form, ewp: e.target.value })}
+                  className={inputCls}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, ewpMode: form.ewpMode === 'existing' ? 'new' : 'existing' })}
+                className="shrink-0 text-xs px-2 py-1 border border-black/15 rounded hover:bg-enbridge-paper whitespace-nowrap"
+              >
+                {form.ewpMode === 'existing' ? '+ New EWP' : '← Existing'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Tag / description</label>
+            <input
+              type="text"
+              value={form.tag}
+              onChange={(e) => setForm({ ...form, tag: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={labelCls}>Length (ft)</label>
+              <input type="number" step="0.1" value={form.length_ft} onChange={(e) => setForm({ ...form, length_ft: e.target.value })} className={`${inputCls} tabular-nums`} />
+            </div>
+            <div>
+              <label className={labelCls}>Width (ft)</label>
+              <input type="number" step="0.1" value={form.width_ft} onChange={(e) => setForm({ ...form, width_ft: e.target.value })} className={`${inputCls} tabular-nums`} />
+            </div>
+            <div>
+              <label className={labelCls}>Height (ft)</label>
+              <input type="number" step="0.1" value={form.height_ft} onChange={(e) => setForm({ ...form, height_ft: e.target.value })} className={`${inputCls} tabular-nums`} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Weight (lbs)</label>
+            <input
+              type="text"
+              value={form.weight_lbs}
+              onChange={(e) => setForm({ ...form, weight_lbs: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Ready to Ship (RTS)</label>
+              <input type="date" value={form.rts_date} onChange={(e) => setForm({ ...form, rts_date: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Planned Ship</label>
+              <input
+                type="date"
+                value={form.planned_ship_date}
+                min={form.rts_date || undefined}
+                onChange={(e) => setForm({ ...form, planned_ship_date: e.target.value })}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Convoy group (optional)</label>
+            <select
+              value={form.convoy_group}
+              onChange={(e) => setForm({ ...form, convoy_group: e.target.value })}
+              className={`${inputCls} bg-white`}
+            >
+              <option value="">— None —</option>
+              {existingGroups.map((g) => <option key={g} value={g}>{GROUP_LABELS[g] ?? g}</option>)}
+            </select>
+          </div>
+          {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
+        </div>
+        <div className="px-5 py-3 border-t border-black/10 flex items-center justify-between gap-2">
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-700">Delete this package permanently?</span>
+              <button
+                onClick={handleDelete}
+                disabled={deleting || saving}
+                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 font-semibold"
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting || saving}
+                className="px-3 py-1.5 text-xs rounded border border-black/15 hover:bg-enbridge-paper"
+              >
+                Keep
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={saving}
+              className="px-3 py-1.5 text-xs rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
+            >
+              Delete package
+            </button>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onCancel}
+              disabled={saving || deleting}
+              className="px-3 py-1.5 text-xs rounded border border-black/15 hover:bg-enbridge-paper disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || deleting}
+              className="px-3 py-1.5 text-xs rounded bg-[#D04E00] text-white hover:bg-[#b84500] disabled:opacity-60 font-semibold"
+            >
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1724,12 +2025,13 @@ function WalkdownModal({
 }
 
 function Chip({
-  pkg, inTray, onDragStart, onDragEnd,
+  pkg, inTray, onDragStart, onDragEnd, onEdit,
 }: {
   pkg: SchedulePackage;
   inTray: boolean;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
+  onEdit?: (id: string) => void;
 }) {
   const { currentMatchId } = useContext(SearchContext);
   const searchId = `pkg-${pkg.id}`;
@@ -1747,6 +2049,8 @@ function Chip({
       data-search-id={searchId}
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', `it:${pkg.id}`); onDragStart(pkg.id); }}
       onDragEnd={onDragEnd}
+      onClick={(e) => { if (onEdit) { e.stopPropagation(); onEdit(pkg.id); } }}
+      title={onEdit ? 'Drag to reschedule · click to edit or delete' : undefined}
       className={`chip relative rounded-md border cursor-grab active:cursor-grabbing px-2 py-1 pl-2.5 text-[11px] select-none ${cls} ${overCls} ${ringCls}`}
     >
       <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md ${pkg.is_over_height ? 'bg-black' : barCls}`} />
@@ -1766,13 +2070,14 @@ function Chip({
 }
 
 function GroupChip({
-  group, members, inTray, onDragStart, onDragEnd,
+  group, members, inTray, onDragStart, onDragEnd, onEdit,
 }: {
   group: string;
   members: SchedulePackage[];
   inTray: boolean;
   onDragStart: (g: string) => void;
   onDragEnd: () => void;
+  onEdit?: (id: string) => void;
 }) {
   const { currentMatchId } = useContext(SearchContext);
   const searchId = `group-${group}`;
@@ -1802,7 +2107,12 @@ function GroupChip({
       <div className="text-[10px] text-enbridge-black/55 mt-0.5">{inTray ? <><Highlight text={members[0].ewp} /> · </> : ''}Ships together same day</div>
       <div className="mt-1 flex flex-col gap-0.5">
         {members.map((m) => (
-          <div key={m.id} className="text-[10px] px-1.5 py-0.5 bg-white/60 rounded border border-black/5 flex justify-between gap-1.5">
+          <div
+            key={m.id}
+            onClick={onEdit ? (e) => { e.stopPropagation(); onEdit(m.id); } : undefined}
+            title={onEdit ? 'Click to edit or delete this load' : undefined}
+            className={`text-[10px] px-1.5 py-0.5 bg-white/60 rounded border border-black/5 flex justify-between gap-1.5 ${onEdit ? 'cursor-pointer hover:bg-white' : ''}`}
+          >
             <span><Highlight text={m.tag.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()} /></span>
             <span className="text-enbridge-black/55 tabular-nums">{m.height_ft}′ · {fmtWeight(m.weight_lbs)}</span>
           </div>
@@ -1815,7 +2125,7 @@ function GroupChip({
 function Cell({
   dateISO, dayNum, units, walkdowns, events, onEventClick, showPackages, showWalkdowns, floorForDrag,
   onDropItem, onDropGroup, onChipDragStart, onGroupDragStart, onDragEnd,
-  onCreateWalkdown, onEditWalkdown,
+  onCreateWalkdown, onEditWalkdown, onEditPkg,
 }: {
   dateISO: string;
   dayNum: number;
@@ -1833,6 +2143,7 @@ function Cell({
   onDragEnd: () => void;
   onCreateWalkdown: (date: string) => void;
   onEditWalkdown: (wd: ScheduleWalkdown) => void;
+  onEditPkg: (id: string) => void;
 }) {
   const [drag, setDrag] = useState<'idle' | 'valid' | 'invalid'>('idle');
   const packageCount = showPackages ? units.length : 0;
@@ -1890,9 +2201,9 @@ function Cell({
         ))}
         {showPackages && units.map((u) =>
           u.kind === 'item' ? (
-            <Chip key={u.pkg.id} pkg={u.pkg} inTray={false} onDragStart={onChipDragStart} onDragEnd={onDragEnd} />
+            <Chip key={u.pkg.id} pkg={u.pkg} inTray={false} onDragStart={onChipDragStart} onDragEnd={onDragEnd} onEdit={onEditPkg} />
           ) : (
-            <GroupChip key={u.group} group={u.group} members={u.members} inTray={false} onDragStart={onGroupDragStart} onDragEnd={onDragEnd} />
+            <GroupChip key={u.group} group={u.group} members={u.members} inTray={false} onDragStart={onGroupDragStart} onDragEnd={onDragEnd} onEdit={onEditPkg} />
           )
         )}
         {showWalkdowns && (
