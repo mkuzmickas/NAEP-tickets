@@ -82,7 +82,7 @@ export function VendorGrid({ vendors }: { vendors: VendorSummary[] }) {
 
   return (
     <>
-    <div className="no-print">
+    <div className="no-print h-full">
     <PageContainer>
       <div className="space-y-6">
         <PageHeader
