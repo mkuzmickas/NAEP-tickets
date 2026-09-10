@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { LineItemCategory } from '@/types/database';
 import type {
@@ -119,6 +119,41 @@ export function ParsePreview({
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState('');
 
+  // Live PO existence check — the parser fills in po_exists once at parse
+  // time, but when the user fixes a typo in the PO field the button needs
+  // to re-enable without a full re-parse. Debounces on the field value and
+  // hits GET /api/pos?po=...
+  const [livePoExists, setLivePoExists] = useState<boolean | null>(null);
+  useEffect(() => {
+    const po = (ticket.po_number ?? '').trim().toUpperCase();
+    // If the field matches what the parser already resolved, use its answer.
+    if (po === initialResult.parsed.po_number.trim().toUpperCase()) {
+      setLivePoExists(null);
+      return;
+    }
+    // Empty or malformed — treat as not-found without an API call.
+    if (!/^PUR-6540-\d{7}$/.test(po)) {
+      setLivePoExists(false);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/pos?po=${encodeURIComponent(po)}`);
+        if (!res.ok) { if (!cancelled) setLivePoExists(false); return; }
+        const j = await res.json();
+        if (!cancelled) setLivePoExists(!!j.exists);
+      } catch {
+        if (!cancelled) setLivePoExists(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [ticket.po_number, initialResult.parsed.po_number]);
+
+  // Effective "does the PO exist" — live-check when the user has edited the
+  // field, otherwise fall back to the parser's answer.
+  const poExists = livePoExists ?? initialResult.po_exists;
+
   const computed_total = useMemo(
     () => round2(ticket.line_items.reduce((s, li) => s + li.final_amount, 0)),
     [ticket.line_items]
@@ -158,14 +193,14 @@ export function ParsePreview({
     reconciled &&
     !hasTicketDup &&
     !hasBlockingBolDup &&
-    initialResult.po_exists &&
+    poExists &&
     !committing;
 
   const canReplace =
     isRevision &&
     reconciled &&
     !hasBlockingBolDup &&
-    initialResult.po_exists &&
+    poExists &&
     !committing;
 
   /** When the existing ticket is pending, uploading a signed PDF is the
@@ -175,7 +210,7 @@ export function ParsePreview({
     existingSnapshot.status === 'pending' &&
     reconciled &&
     !hasBlockingBolDup &&
-    initialResult.po_exists &&
+    poExists &&
     !committing;
 
   /** Signature stamp state derived from the parser. Drives the stamp chip
@@ -261,7 +296,7 @@ export function ParsePreview({
     initialResult.warnings.length > 0 ||
     hasTicketDup ||
     blockingBolCollisions.length > 0 ||
-    !initialResult.po_exists ||
+    !poExists ||
     commitError;
 
   return (
@@ -302,7 +337,7 @@ export function ParsePreview({
 
       {showBanners && (
         <div className="px-5 py-3 border-b border-black/10 space-y-2">
-          {!initialResult.po_exists && (
+          {!poExists && (
             <Banner level="error">
               PO <strong className="font-mono">{ticket.po_number}</strong> not
               found. Fix the PO number below or reject this upload.
@@ -427,11 +462,13 @@ export function ParsePreview({
             </Banner>
           ))}
 
-          {initialResult.warnings.map((w, i) => (
-            <Banner key={i} level="warn">
-              {w}
-            </Banner>
-          ))}
+          {initialResult.warnings
+            .filter((w) => !(poExists && /not found in service_pos/i.test(w)))
+            .map((w, i) => (
+              <Banner key={i} level="warn">
+                {w}
+              </Banner>
+            ))}
 
           {commitError && <Banner level="error">{commitError}</Banner>}
         </div>

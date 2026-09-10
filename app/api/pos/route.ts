@@ -16,6 +16,42 @@ type AddPoBody = {
   committed_amount?: number;
 };
 
+/**
+ * GET /api/pos?po=PUR-6540-XXXXXXX — cheap existence check.
+ * Used by the Upload & Reconcile form so the Commit button can re-enable
+ * as soon as the user fixes a typo in the PO number without a full re-parse.
+ */
+export async function GET(req: Request) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const po = (new URL(req.url).searchParams.get('po') ?? '').trim().toUpperCase();
+  if (!po) {
+    return NextResponse.json({ error: 'po query param required' }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from('service_pos')
+    .select('po_number, vendor_display_name')
+    .eq('po_number', po)
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    exists: !!data,
+    po_number: data?.po_number ?? null,
+    vendor_display_name: data?.vendor_display_name ?? null,
+  });
+}
+
 export async function POST(req: Request) {
   const supabase = createClient();
   const {
