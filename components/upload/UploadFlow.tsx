@@ -241,24 +241,51 @@ export function UploadFlow() {
             const needsReviewCount = items.filter(
               (i) => i.status === 'ready' && !isCommittable(i)
             ).length;
+            const doneCount = committedCount + errorCount;
             if (items.length < 2) return null;
             return (
               <div className="rounded-lg border border-black/10 bg-white p-4 flex items-center justify-between gap-4 flex-wrap">
                 <div className="text-sm text-enbridge-black/70 tabular-nums">
                   <strong>{readyCount}</strong> ready · {needsReviewCount} need review · {parsingCount} still parsing · {committedCount} committed · {errorCount} error{errorCount === 1 ? '' : 's'}
                 </div>
-                <button
-                  onClick={bulkCommitAll}
-                  disabled={readyCount === 0 || bulkCommitting}
-                  className="px-4 py-2 rounded bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Commit every card that has a green ✓ Reconciled badge and no duplicate warnings"
-                >
-                  {bulkCommitting
-                    ? `Committing ${readyCount}…`
-                    : readyCount === 0
-                      ? 'Nothing to bulk-commit'
-                      : `Accept & commit all ready (${readyCount})`}
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {doneCount > 0 && (
+                    <button
+                      onClick={() => {
+                        const doneIds = items
+                          .filter((i) => i.status === 'committed' || i.status === 'error')
+                          .map((i) => ({ id: i.localId, path: i.storagePath }));
+                        // Fire the storage cleanups in parallel; the local state
+                        // filter runs once at the end so the list only re-renders
+                        // once instead of N times.
+                        doneIds.forEach(({ path }) => {
+                          if (path) {
+                            createClient().storage.from('ticket-pdfs').remove([path]).catch(() => {});
+                          }
+                        });
+                        const doneSet = new Set(doneIds.map((d) => d.id));
+                        setItems((prev) => prev.filter((it) => !doneSet.has(it.localId)));
+                      }}
+                      disabled={bulkCommitting}
+                      className="px-3 py-2 rounded border border-black/15 bg-white text-sm text-enbridge-black/80 hover:bg-enbridge-paper disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Clear every committed / error card from the list — active review cards stay put"
+                    >
+                      Dismiss all done ({doneCount})
+                    </button>
+                  )}
+                  <button
+                    onClick={bulkCommitAll}
+                    disabled={readyCount === 0 || bulkCommitting}
+                    className="px-4 py-2 rounded bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Commit every card that has a green ✓ Reconciled badge and no duplicate warnings"
+                  >
+                    {bulkCommitting
+                      ? `Committing ${readyCount}…`
+                      : readyCount === 0
+                        ? 'Nothing to bulk-commit'
+                        : `Accept & commit all ready (${readyCount})`}
+                  </button>
+                </div>
               </div>
             );
           })()}
