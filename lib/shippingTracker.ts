@@ -33,7 +33,12 @@ export type TrackerTicket = {
   field_notes: string | null;
 };
 
-export type TrendPoint = { date: string; value: number };
+export type TrendPoint = {
+  date: string;
+  value: number;
+  package_tag: string | null;
+  ewp: string | null;
+};
 
 export type ShippingTrackerData = {
   packages: TrackerPackage[];
@@ -198,21 +203,29 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
   });
 
   // Trend series — every dated budget line and every dated ticket, sorted so
-  // the client can cumulative-sum in render.
+  // the client can cumulative-sum in render. Each point carries the schedule
+  // package it belongs to (tag + ewp) so the CSV export can group by package.
   const forecast: TrendPoint[] = ((pkgRows ?? []) as RawPkg[])
     .filter((r) => r.planned_ship_date)
     .map((r) => ({
       date: r.planned_ship_date as string,
       value: num(r.total_cost) || num(r.shipping_cost) + num(r.permits_cost),
+      package_tag: r.tag,
+      ewp: r.ewp,
     }))
     .filter((p) => p.value > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const actual: TrendPoint[] = ticketRows
-    .map((t) => ({
-      date: t.ticket_date,
-      value: Number(t.face_value),
-    }))
+    .map((t) => {
+      const pkg = t.schedule_package_id ? pkgById.get(t.schedule_package_id) : null;
+      return {
+        date: t.ticket_date,
+        value: Number(t.face_value),
+        package_tag: pkg ? pkg.tag : null,
+        ewp: pkg ? pkg.ewp : null,
+      };
+    })
     .filter((p) => p.value > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 
