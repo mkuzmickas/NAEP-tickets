@@ -57,6 +57,54 @@ function formatShortMoney(v: number): string {
   return `$${v.toFixed(0)}`;
 }
 
+/**
+ * Merge forecast and actual TrendPoints on Date, then emit a CSV with both
+ * daily increments and running cumulative totals so a reader can rebuild
+ * either the raw points or the chart. Union of dates, sorted ascending.
+ * Variance-to-Date = cumulative actual − cumulative forecast (matches the
+ * chart header). One row per date that has activity on either side.
+ */
+function buildForecastVsActualCsv(
+  forecast: TrendPoint[],
+  actual: TrendPoint[]
+): string {
+  const fMap = new Map<string, number>();
+  for (const p of forecast) fMap.set(p.date, (fMap.get(p.date) ?? 0) + p.value);
+  const aMap = new Map<string, number>();
+  for (const p of actual) aMap.set(p.date, (aMap.get(p.date) ?? 0) + p.value);
+  const dates = Array.from(new Set([...fMap.keys(), ...aMap.keys()])).sort();
+
+  const header =
+    'Date,Forecast (this date),Cumulative Forecast,Actual (this date),Cumulative Actual,Variance-to-Date';
+  const rows: string[] = [header];
+  let cumF = 0;
+  let cumA = 0;
+  for (const d of dates) {
+    const f = fMap.get(d) ?? 0;
+    const a = aMap.get(d) ?? 0;
+    cumF += f;
+    cumA += a;
+    const variance = cumA - cumF;
+    rows.push(
+      [d, f.toFixed(2), cumF.toFixed(2), a.toFixed(2), cumA.toFixed(2), variance.toFixed(2)].join(',')
+    );
+  }
+  return rows.join('\n') + '\n';
+}
+
+function downloadCsv(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+
 export function ShippingTrendChart({
   forecast,
   actual,
@@ -210,6 +258,18 @@ export function ShippingTrendChart({
               {formatMoney(varianceLatest)}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              const csv = buildForecastVsActualCsv(forecast, actual);
+              const stamp = new Date().toISOString().slice(0, 10);
+              downloadCsv(csv, `shipping-forecast-vs-actual-${stamp}.csv`);
+            }}
+            className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]"
+            title="Download the merged forecast + actual series (daily increments and cumulative totals) as CSV"
+          >
+            Export CSV
+          </button>
         </div>
       </div>
 
