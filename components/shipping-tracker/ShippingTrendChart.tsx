@@ -58,138 +58,99 @@ function formatShortMoney(v: number): string {
 }
 
 /**
- * Emit one CSV row per (Package, Date) with the package's own daily +
- * cumulative forecast and actual, so a spreadsheet reader can pivot / filter
- * by package. Rows are grouped by package (blank package_tag rolls into an
- * "Unassigned" bucket) and sorted ascending by date within each group. A
- * trailing PORTFOLIO block gives the whole-project cumulative + variance —
- * same numbers the chart header shows.
+ * One CSV row per (Date, Package) — sorted by date ascending across the
+ * whole file so oldest is on top and the sheet reads as a chronological
+ * shipping log. Each row shows that package's daily numbers plus its own
+ * running cumulative-up-to-this-date and running variance. Money cells are
+ * formatted as $#,##0.00 strings so the file is directly presentable.
+ * Tickets with no package assignment roll into an "Unassigned" bucket.
  */
 function csvCell(v: string): string {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+function money(v: number): string {
+  const s = Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  // Wrap in quotes because the thousands separator is a comma.
+  return v < 0 ? `"-$${s}"` : `"$${s}"`;
 }
 
 function buildForecastVsActualCsv(
   forecast: TrendPoint[],
   actual: TrendPoint[]
 ): string {
-  type Key = string; // `${tag}␟${ewp}` — U+241F = SEP so it can't collide with tag chars
-  const SEP = '␟';
   const UNASSIGNED = 'Unassigned';
 
-  const keyOf = (tag: string | null, ewp: string | null): Key =>
-    `${tag ?? UNASSIGNED}${SEP}${ewp ?? ''}`;
+  type Row = {
+    date: string;
+    tag: string;
+    ewp: string;
+    f: number;
+    a: number;
+  };
 
-  // Bucket forecast + actual by (package, date). value defaults to 0 on either
-  // side so a date that only appears on one side still yields one row.
-  const fMap = new Map<Key, Map<string, number>>();
-  const aMap = new Map<Key, Map<string, number>>();
-  const keys = new Set<Key>();
+  // Bucket both series by (date, tag, ewp) so a package that has both a
+  // forecast and an actual on the same date produces one row, not two.
+  const byKey = new Map<string, Row>();
+  const upsert = (date: string, tag: string, ewp: string, f: number, a: number) => {
+    const k = `${date}|${tag}|${ewp}`;
+    const cur = byKey.get(k);
+    if (cur) {
+      cur.f += f;
+      cur.a += a;
+    } else {
+      byKey.set(k, { date, tag, ewp, f, a });
+    }
+  };
+  for (const p of forecast) upsert(p.date, p.package_tag ?? UNASSIGNED, p.ewp ?? '', p.value, 0);
+  for (const p of actual)   upsert(p.date, p.package_tag ?? UNASSIGNED, p.ewp ?? '', 0, p.value);
 
-  for (const p of forecast) {
-    const k = keyOf(p.package_tag, p.ewp);
-    keys.add(k);
-    if (!fMap.has(k)) fMap.set(k, new Map());
-    const m = fMap.get(k)!;
-    m.set(p.date, (m.get(p.date) ?? 0) + p.value);
-  }
-  for (const p of actual) {
-    const k = keyOf(p.package_tag, p.ewp);
-    keys.add(k);
-    if (!aMap.has(k)) aMap.set(k, new Map());
-    const m = aMap.get(k)!;
-    m.set(p.date, (m.get(p.date) ?? 0) + p.value);
-  }
-
-  // Sort keys: real packages by tag, "Unassigned" last.
-  const sortedKeys = Array.from(keys).sort((a, b) => {
-    const [tagA] = a.split(SEP);
-    const [tagB] = b.split(SEP);
-    if (tagA === UNASSIGNED && tagB !== UNASSIGNED) return 1;
-    if (tagB === UNASSIGNED && tagA !== UNASSIGNED) return -1;
-    return tagA.localeCompare(tagB);
+  // Global sort: oldest date on top; within a date, packages alphabetical.
+  const rowsSorted = Array.from(byKey.values()).sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return a.tag.localeCompare(b.tag);
   });
 
+  // Running cumulative per package as we iterate in date order — each row
+  // reflects that package's total up to and including its own date.
+  const cumF = new Map<string, number>();
+  const cumA = new Map<string, number>();
+
   const header = [
+    'Date',
     'Package',
     'EWP',
-    'Date',
     'Forecast (this date)',
     'Cumulative Forecast (package)',
     'Actual (this date)',
     'Cumulative Actual (package)',
     'Variance-to-Date (package)',
   ].join(',');
-  const rows: string[] = [header];
+  const out: string[] = [header];
 
-  for (const k of sortedKeys) {
-    const [tag, ewp] = k.split(SEP);
-    const f = fMap.get(k) ?? new Map<string, number>();
-    const a = aMap.get(k) ?? new Map<string, number>();
-    const dates = Array.from(new Set([...f.keys(), ...a.keys()])).sort();
-    let cumF = 0;
-    let cumA = 0;
-    for (const d of dates) {
-      const df = f.get(d) ?? 0;
-      const da = a.get(d) ?? 0;
-      cumF += df;
-      cumA += da;
-      rows.push(
-        [
-          csvCell(tag),
-          csvCell(ewp),
-          d,
-          df.toFixed(2),
-          cumF.toFixed(2),
-          da.toFixed(2),
-          cumA.toFixed(2),
-          (cumA - cumF).toFixed(2),
-        ].join(',')
-      );
-    }
-  }
-
-  // Portfolio roll-up block — same shape as the chart's own header pill.
-  rows.push('');
-  rows.push(
-    [
-      'PORTFOLIO',
-      '',
-      'Date',
-      'Forecast (this date)',
-      'Cumulative Forecast (portfolio)',
-      'Actual (this date)',
-      'Cumulative Actual (portfolio)',
-      'Variance-to-Date (portfolio)',
-    ].join(',')
-  );
-  const fTotals = new Map<string, number>();
-  const aTotals = new Map<string, number>();
-  for (const p of forecast) fTotals.set(p.date, (fTotals.get(p.date) ?? 0) + p.value);
-  for (const p of actual) aTotals.set(p.date, (aTotals.get(p.date) ?? 0) + p.value);
-  const allDates = Array.from(new Set([...fTotals.keys(), ...aTotals.keys()])).sort();
-  let cumFAll = 0;
-  let cumAAll = 0;
-  for (const d of allDates) {
-    const df = fTotals.get(d) ?? 0;
-    const da = aTotals.get(d) ?? 0;
-    cumFAll += df;
-    cumAAll += da;
-    rows.push(
+  for (const r of rowsSorted) {
+    const nextF = (cumF.get(r.tag) ?? 0) + r.f;
+    const nextA = (cumA.get(r.tag) ?? 0) + r.a;
+    cumF.set(r.tag, nextF);
+    cumA.set(r.tag, nextA);
+    out.push(
       [
-        'PORTFOLIO',
-        '',
-        d,
-        df.toFixed(2),
-        cumFAll.toFixed(2),
-        da.toFixed(2),
-        cumAAll.toFixed(2),
-        (cumAAll - cumFAll).toFixed(2),
+        r.date,
+        csvCell(r.tag),
+        csvCell(r.ewp),
+        money(r.f),
+        money(nextF),
+        money(r.a),
+        money(nextA),
+        money(nextA - nextF),
       ].join(',')
     );
   }
 
-  return rows.join('\n') + '\n';
+  return out.join('\n') + '\n';
 }
 
 function downloadCsv(csv: string, filename: string) {
