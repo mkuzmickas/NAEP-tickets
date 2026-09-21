@@ -92,6 +92,7 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
         <ShippingTrendChart
           forecast={data.trend.forecast}
           actual={data.trend.actual}
+          packages={data.packages}
         />
 
         <PackageBucketCards packages={data.packages} />

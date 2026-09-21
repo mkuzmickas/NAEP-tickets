@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/money';
-import type { TrendPoint } from '@/lib/shippingTracker';
+import type { TrendPoint, TrackerPackage } from '@/lib/shippingTracker';
 import { bucketOf } from '@/lib/shippingBuckets';
 
 /* --------------------------------------------------------------------------
@@ -182,9 +182,11 @@ function downloadCsv(csv: string, filename: string) {
 export function ShippingTrendChart({
   forecast,
   actual,
+  packages,
 }: {
   forecast: TrendPoint[];
   actual: TrendPoint[];
+  packages: TrackerPackage[];
 }) {
   const [hover, setHover] = useState<{
     x: number;
@@ -206,6 +208,28 @@ export function ShippingTrendChart({
 
   const forecastSeries = useMemo(() => buildSeries(visibleForecast), [visibleForecast]);
   const actualSeries = useMemo(() => buildSeries(visibleActual), [visibleActual]);
+
+  // Cost variance on shipped work: for every package whose planned_ship_date
+  // has passed (as of today), compare its accrued actual LEM against its
+  // budgeted shipping/permits total. Positive = over budget on delivered
+  // work; negative = under budget. This is what "am I ahead or behind the
+  // plan?" actually means — the gap between the two cumulative lines above
+  // is just the cash-flow lag between planning and invoicing.
+  const shippedVariance = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString().slice(0, 10);
+    let budget = 0;
+    let actualSum = 0;
+    let pkgCount = 0;
+    for (const p of packages) {
+      if (!p.planned_ship_date || p.planned_ship_date > todayIso) continue;
+      budget += p.budget_total;
+      actualSum += p.actual;
+      pkgCount += 1;
+    }
+    return { budget, actual: actualSum, delta: actualSum - budget, pkgCount };
+  }, [packages]);
 
   if (forecastSeries.length === 0 && actualSeries.length === 0) {
     return (
@@ -298,9 +322,6 @@ export function ShippingTrendChart({
     });
   }
 
-  const varianceLatest =
-    (actualLatest?.cumulative ?? 0) - (forecastLatest?.cumulative ?? 0);
-
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">
       <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
@@ -309,27 +330,39 @@ export function ShippingTrendChart({
             Forecast vs Actual
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Cumulative budgeted spend (by planned ship date) vs. cumulative
-            actual LEM (by ticket date) across every shipping-tracking PO.
+            Cumulative planned spend (by planned ship date) vs. cumulative
+            actual LEM (by ticket date). The pill on the right is the true
+            cost variance — actual minus budget across only the packages
+            that have shipped so far.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
-          <LegendSwatch color="var(--warn)" label="Forecast (Budget)" dashed />
+          <LegendSwatch color="var(--warn)" label="Planned (Budget)" dashed />
           <LegendSwatch color="var(--under)" label="Actual (LEM)" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
-              Variance-to-Date
+              Shipped-to-Date · Actual vs Budget
             </div>
             <div
               className={`text-base font-semibold tabular ${
-                varianceLatest > 0
+                shippedVariance.delta > 0
                   ? 'text-[var(--over)]'
-                  : varianceLatest < 0
+                  : shippedVariance.delta < 0
                     ? 'text-[var(--under)]'
                     : 'text-[var(--text)]'
               }`}
+              title={`${shippedVariance.pkgCount} shipped package${shippedVariance.pkgCount === 1 ? '' : 's'} · budget ${formatMoney(shippedVariance.budget)} · actual ${formatMoney(shippedVariance.actual)}`}
             >
-              {formatMoney(varianceLatest)}
+              {shippedVariance.delta > 0 ? '+' : ''}
+              {formatMoney(shippedVariance.delta)}
+            </div>
+            <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+              {shippedVariance.pkgCount} shipped ·{' '}
+              {shippedVariance.delta > 0
+                ? 'over budget'
+                : shippedVariance.delta < 0
+                  ? 'under budget'
+                  : 'on budget'}
             </div>
           </div>
           <button
