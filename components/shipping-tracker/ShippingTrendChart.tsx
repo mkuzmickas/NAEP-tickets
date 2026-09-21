@@ -209,26 +209,35 @@ export function ShippingTrendChart({
   const forecastSeries = useMemo(() => buildSeries(visibleForecast), [visibleForecast]);
   const actualSeries = useMemo(() => buildSeries(visibleActual), [visibleActual]);
 
-  // Cost variance on shipped work: for every package whose planned_ship_date
-  // has passed (as of today), compare its accrued actual LEM against its
-  // budgeted shipping/permits total. Positive = over budget on delivered
-  // work; negative = under budget. This is what "am I ahead or behind the
-  // plan?" actually means — the gap between the two cumulative lines above
-  // is just the cash-flow lag between planning and invoicing.
+  // Cost overrun on shipped work. For every package that either has an
+  // actual ship date on file (LaPrairie ticket landed) OR whose baseline
+  // ship date has passed, add up how much the accrued LEM has exceeded
+  // the budget. Budget is treated as a FLOOR — if actual < budget we
+  // assume invoices haven't caught up yet and contribute $0 to the
+  // overrun, rather than counting the gap as savings. The number can
+  // never go negative, so 'looks under budget' from lagging tickets
+  // isn't reported as savings. It can still read $0 when nothing has
+  // yet exceeded plan — which is honest.
   const shippedVariance = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayIso = today.toISOString().slice(0, 10);
     let budget = 0;
     let actualSum = 0;
+    let effectiveSum = 0; // Σ max(actual, budget) — the floor-adjusted spend
     let pkgCount = 0;
     for (const p of packages) {
-      if (!p.planned_ship_date || p.planned_ship_date > todayIso) continue;
+      const baseline = p.baseline_ship_date ?? p.planned_ship_date;
+      const dueByNow = baseline && baseline <= todayIso;
+      const shipped = !!p.actual_ship_date;
+      if (!dueByNow && !shipped) continue;
       budget += p.budget_total;
       actualSum += p.actual;
+      effectiveSum += Math.max(p.actual, p.budget_total);
       pkgCount += 1;
     }
-    return { budget, actual: actualSum, delta: actualSum - budget, pkgCount };
+    const overrun = effectiveSum - budget; // ≥ 0 by construction
+    return { budget, actual: actualSum, overrun, pkgCount };
   }, [packages]);
 
   if (forecastSeries.length === 0 && actualSeries.length === 0) {
@@ -331,9 +340,10 @@ export function ShippingTrendChart({
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
             Cumulative planned spend (by planned ship date) vs. cumulative
-            actual LEM (by ticket date). The pill on the right is the true
-            cost variance — actual minus budget across only the packages
-            that have shipped so far.
+            actual LEM (by ticket date). Pill on the right = cost overrun
+            on shipped work: for every shipped package, actual invoices
+            over budget count; missing invoices are floored at budget so
+            they don't fake as savings.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
@@ -341,28 +351,23 @@ export function ShippingTrendChart({
           <LegendSwatch color="var(--under)" label="Actual (LEM)" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
-              Shipped-to-Date · Actual vs Budget
+              Overrun on Shipped Work
             </div>
             <div
               className={`text-base font-semibold tabular ${
-                shippedVariance.delta > 0
+                shippedVariance.overrun > 0
                   ? 'text-[var(--over)]'
-                  : shippedVariance.delta < 0
-                    ? 'text-[var(--under)]'
-                    : 'text-[var(--text)]'
+                  : 'text-[var(--text)]'
               }`}
-              title={`${shippedVariance.pkgCount} shipped package${shippedVariance.pkgCount === 1 ? '' : 's'} · budget ${formatMoney(shippedVariance.budget)} · actual ${formatMoney(shippedVariance.actual)}`}
+              title={`${shippedVariance.pkgCount} shipped package${shippedVariance.pkgCount === 1 ? '' : 's'} · budget ${formatMoney(shippedVariance.budget)} · actual invoiced ${formatMoney(shippedVariance.actual)} · overrun floors under-invoiced packages at their budget`}
             >
-              {shippedVariance.delta > 0 ? '+' : ''}
-              {formatMoney(shippedVariance.delta)}
+              {shippedVariance.overrun > 0 ? '+' : ''}
+              {formatMoney(shippedVariance.overrun)}
             </div>
-            <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
-              {shippedVariance.pkgCount} shipped ·{' '}
-              {shippedVariance.delta > 0
-                ? 'over budget'
-                : shippedVariance.delta < 0
-                  ? 'under budget'
-                  : 'on budget'}
+            <div className="text-[10px] text-[var(--text-muted)] mt-0.5 tabular">
+              {shippedVariance.pkgCount} shipped · actual{' '}
+              {formatMoney(shippedVariance.actual)} / budget{' '}
+              {formatMoney(shippedVariance.budget)}
             </div>
           </div>
           <button
