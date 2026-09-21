@@ -581,7 +581,7 @@ export function ShippingTrendChart({
                 </text>
                 {hover.forecast != null && (
                   <text x={10} y={32} fontSize={11} fill="var(--warn)" className="tabular">
-                    Forecast {formatMoney(hover.forecast)}
+                    Baseline {formatMoney(hover.forecast)}
                   </text>
                 )}
                 {hover.actual != null && (
@@ -593,7 +593,7 @@ export function ShippingTrendChart({
                     className="tabular"
                     fontWeight={600}
                   >
-                    Actual {formatMoney(hover.actual)}
+                    Committed {formatMoney(hover.actual)}
                   </text>
                 )}
               </g>
