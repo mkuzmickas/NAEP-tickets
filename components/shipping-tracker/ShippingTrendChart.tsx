@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { TrendPoint, TrackerPackage } from '@/lib/shippingTracker';
+import { computeShippingMetrics } from '@/lib/shippingTracker';
 import { bucketOf } from '@/lib/shippingBuckets';
 
 /* --------------------------------------------------------------------------
@@ -264,47 +265,10 @@ export function ShippingTrendChart({
   // never go negative, so 'looks under budget' from lagging tickets
   // isn't reported as savings. It can still read $0 when nothing has
   // yet exceeded plan — which is honest.
-  const shippedVariance = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayIso = today.toISOString().slice(0, 10);
-    let budget = 0;
-    let actualSum = 0;
-    let effectiveSum = 0; // Σ max(actual, budget) — the floor-adjusted spend
-    let pkgCount = 0;
-    // Split so the subtitle can explain WHERE the overrun comes from:
-    // packages that came in above budget (real overruns) vs packages that
-    // came in below budget (either genuine savings or invoices lagging).
-    let overCount = 0;
-    let overSum = 0;
-    let underOrPendingCount = 0;
-    for (const p of packages) {
-      const baseline = p.baseline_ship_date ?? p.planned_ship_date;
-      const dueByNow = baseline && baseline <= todayIso;
-      const shipped = !!p.actual_ship_date;
-      if (!dueByNow && !shipped) continue;
-      budget += p.budget_total;
-      actualSum += p.actual;
-      effectiveSum += Math.max(p.actual, p.budget_total);
-      pkgCount += 1;
-      if (p.actual > p.budget_total) {
-        overCount += 1;
-        overSum += p.actual - p.budget_total;
-      } else {
-        underOrPendingCount += 1;
-      }
-    }
-    const overrun = effectiveSum - budget; // ≥ 0 by construction
-    return {
-      budget,
-      actual: actualSum,
-      overrun,
-      pkgCount,
-      overCount,
-      overSum,
-      underOrPendingCount,
-    };
-  }, [packages]);
+  const shippedVariance = useMemo(
+    () => computeShippingMetrics(packages),
+    [packages]
+  );
 
   if (forecastSeries.length === 0 && actualSeries.length === 0) {
     return (
@@ -425,7 +389,7 @@ export function ShippingTrendChart({
                   ? 'text-[var(--over)]'
                   : 'text-[var(--text)]'
               }`}
-              title={`Overrun is the sum of (actual − budget) across packages where actual > budget. The remaining ${shippedVariance.underOrPendingCount} shipped package${shippedVariance.underOrPendingCount === 1 ? '' : 's'} are either genuinely under budget or still waiting on LaPrairie tickets — they contribute $0 to the overrun. Raw totals: actual invoiced ${formatMoney(shippedVariance.actual)}, budget ${formatMoney(shippedVariance.budget)}.`}
+              title={`Overrun is the sum of (actual − budget) across packages where actual > budget. The remaining ${shippedVariance.underOrPendingCount} shipped package${shippedVariance.underOrPendingCount === 1 ? '' : 's'} are either genuinely under budget or still waiting on LaPrairie tickets — they contribute $0 to the overrun. Raw totals across shipped work: actual invoiced ${formatMoney(shippedVariance.shippedActual)}, budget ${formatMoney(shippedVariance.shippedBudget)}.`}
             >
               {shippedVariance.overrun > 0 ? '+' : ''}
               {formatMoney(shippedVariance.overrun)}

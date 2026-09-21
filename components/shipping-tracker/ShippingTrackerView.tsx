@@ -12,17 +12,15 @@ import type {
   TrackerPackage,
   TrackerTicket,
 } from '@/lib/shippingTracker';
+import { computeShippingMetrics } from '@/lib/shippingTracker';
 
 export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
   const [assignFor, setAssignFor] = useState<TrackerTicket | null>(null);
 
-  const totals = useMemo(() => {
-    const budget = data.packages.reduce((s, p) => s + p.budget_total, 0);
-    const actual = data.packages.reduce((s, p) => s + p.actual, 0);
-    const diff = actual - budget;
-    const pct = budget > 0 ? (actual / budget) * 100 : 0;
-    return { budget, actual, diff, pct };
-  }, [data.packages]);
+  const metrics = useMemo(
+    () => computeShippingMetrics(data.packages),
+    [data.packages]
+  );
 
   const unassignedByPo = data.ticketsByPo.map((po) => ({
     ...po,
@@ -65,21 +63,28 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatTile
-            label="Total Budget"
-            value={formatMoney(totals.budget)}
-            sub={`${data.packages.length} package${data.packages.length === 1 ? '' : 's'} on plan`}
-          />
-          <StatTile
-            label="Total Actual"
-            value={formatMoney(totals.actual)}
-            sub={`${totals.pct.toFixed(1)}% of budget`}
+            label="Actual Invoiced"
+            value={formatMoney(metrics.totalActual)}
+            sub={`across ${metrics.shippedPkgCount} shipped package${metrics.shippedPkgCount === 1 ? '' : 's'}`}
             emphasis
           />
           <StatTile
-            label="Variance"
-            value={formatMoney(totals.diff)}
-            sub={totals.diff > 0 ? 'over budget' : totals.diff < 0 ? 'under budget' : 'on budget'}
-            tone={totals.diff > 0 ? 'over' : totals.diff < 0 ? 'under' : 'neutral'}
+            label="Overrun on Shipped Work"
+            value={
+              (metrics.overrun > 0 ? '+' : '') + formatMoney(metrics.overrun)
+            }
+            sub={
+              metrics.overCount === 0
+                ? 'no packages over budget yet'
+                : `${metrics.overCount} pkg${metrics.overCount === 1 ? '' : 's'} over${metrics.underOrPendingCount > 0 ? ` · ${metrics.underOrPendingCount} under-invoiced` : ''}`
+            }
+            tone={metrics.overrun > 0 ? 'over' : 'neutral'}
+          />
+          <StatTile
+            label="Forecast at Completion"
+            value={formatMoney(metrics.fac)}
+            sub={`vs ${formatMoney(metrics.totalBudget)} budget · assumes future pkgs hold`}
+            tone={metrics.fac > metrics.totalBudget ? 'over' : 'neutral'}
           />
           <StatTile
             label="Needs Assignment"
