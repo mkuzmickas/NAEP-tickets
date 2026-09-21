@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { TrendPoint } from '@/lib/shippingTracker';
+import { bucketOf } from '@/lib/shippingBuckets';
 
 /* --------------------------------------------------------------------------
    Forecast vs Actual cumulative chart — one line for cumulative budget by
@@ -77,57 +78,6 @@ function money(v: number): string {
   });
   // Wrap in quotes because the thousands separator is a comma.
   return v < 0 ? `"-$${s}"` : `"$${s}"`;
-}
-
-/**
- * Fold a package tag into its shipping bucket. Rules are ordered — first
- * match wins. New tags that don't match any rule stay as their own bucket,
- * so nothing silently disappears; add a rule here if a new family shows
- * up and Mike wants it grouped.
- */
-function bucketOf(tag: string): string {
-  const t = tag.trim();
-
-  // 750 bbl tanks 1..N
-  if (/^\s*750\s*bbl\s*tank/i.test(t)) return '750 bbl Tanks';
-
-  // BTEX Tanks (all pad/pier variants)
-  if (/BTEX/i.test(t)) return 'BTEX Tanks';
-
-  // KBZ MCC (before the KBZ N rule so it doesn't get pulled into "KBZ")
-  if (/^KBZ\s*MCC/i.test(t)) return 'KBZ MCC';
-
-  // KBZ 1 / KBZ 2 / KBZ 3 → separate buckets per unit
-  const kbz = t.match(/^KBZ\s*(\d+)/i);
-  if (kbz) return `KBZ ${kbz[1]}`;
-
-  // BelAir generators 350A/B/C/D/E + E House
-  if (/BelAir/i.test(t)) return 'BelAir Generators';
-
-  // MOD-11101 / MOD-11101-104 / MOD-11105/11106 → parent MOD number
-  const mod = t.match(/^(MOD-\d+)/);
-  if (mod) return mod[1];
-
-  // HP / LP Flare KO Drums
-  if (/Flare KO Drum/i.test(t)) return 'Flare KO Drums';
-
-  // Flare Stack (pieces + foundation)
-  if (/Flare Stack/i.test(t)) return 'Flare Stack';
-
-  // Fuel Gas Conditioning Skid + accessories
-  if (/Fuel Gas Conditioning/i.test(t)) return 'Fuel Gas Conditioning';
-
-  // Coolant / Lube Oil (Cado) — a bucket in its own right
-  if (/Coolant.*Lube Oil|Lube Oil/i.test(t)) return 'Coolant / Lube Oil';
-
-  // Start Air Skid family (Cado + ship-loose vessels)
-  if (/Start Air Skid/i.test(t)) return 'Start Air Skid';
-
-  // Skim/Slop Pump Building
-  if (/Skim.?Slop|Skip.?Slop/i.test(t)) return 'Skim Slop Pump';
-
-  // Fall back to the raw tag — never lose a package
-  return t;
 }
 
 function buildForecastVsActualCsv(

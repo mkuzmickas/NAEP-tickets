@@ -6,6 +6,7 @@ import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader, StatTile, Card, CardHeader, EmptyState } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
 import { ShippingTrendChart } from '@/components/shipping-tracker/ShippingTrendChart';
+import { PackageBucketCards } from '@/components/shipping-tracker/PackageBucketCards';
 import type {
   ShippingTrackerData,
   TrackerPackage,
@@ -92,6 +93,8 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
           forecast={data.trend.forecast}
           actual={data.trend.actual}
         />
+
+        <PackageBucketCards packages={data.packages} />
 
         {totalUnassigned > 0 && (
           <Card>
