@@ -253,6 +253,12 @@ export function ShippingTrendChart({
     let actualSum = 0;
     let effectiveSum = 0; // Σ max(actual, budget) — the floor-adjusted spend
     let pkgCount = 0;
+    // Split so the subtitle can explain WHERE the overrun comes from:
+    // packages that came in above budget (real overruns) vs packages that
+    // came in below budget (either genuine savings or invoices lagging).
+    let overCount = 0;
+    let overSum = 0;
+    let underOrPendingCount = 0;
     for (const p of packages) {
       const baseline = p.baseline_ship_date ?? p.planned_ship_date;
       const dueByNow = baseline && baseline <= todayIso;
@@ -262,9 +268,23 @@ export function ShippingTrendChart({
       actualSum += p.actual;
       effectiveSum += Math.max(p.actual, p.budget_total);
       pkgCount += 1;
+      if (p.actual > p.budget_total) {
+        overCount += 1;
+        overSum += p.actual - p.budget_total;
+      } else {
+        underOrPendingCount += 1;
+      }
     }
     const overrun = effectiveSum - budget; // ≥ 0 by construction
-    return { budget, actual: actualSum, overrun, pkgCount };
+    return {
+      budget,
+      actual: actualSum,
+      overrun,
+      pkgCount,
+      overCount,
+      overSum,
+      underOrPendingCount,
+    };
   }, [packages]);
 
   if (forecastSeries.length === 0 && actualSeries.length === 0) {
@@ -390,15 +410,25 @@ export function ShippingTrendChart({
                   ? 'text-[var(--over)]'
                   : 'text-[var(--text)]'
               }`}
-              title={`${shippedVariance.pkgCount} shipped package${shippedVariance.pkgCount === 1 ? '' : 's'} · budget ${formatMoney(shippedVariance.budget)} · actual invoiced ${formatMoney(shippedVariance.actual)} · overrun floors under-invoiced packages at their budget`}
+              title={`Overrun is the sum of (actual − budget) across packages where actual > budget. The remaining ${shippedVariance.underOrPendingCount} shipped package${shippedVariance.underOrPendingCount === 1 ? '' : 's'} are either genuinely under budget or still waiting on LaPrairie tickets — they contribute $0 to the overrun. Raw totals: actual invoiced ${formatMoney(shippedVariance.actual)}, budget ${formatMoney(shippedVariance.budget)}.`}
             >
               {shippedVariance.overrun > 0 ? '+' : ''}
               {formatMoney(shippedVariance.overrun)}
             </div>
             <div className="text-[10px] text-[var(--text-muted)] mt-0.5 tabular">
-              {shippedVariance.pkgCount} shipped · actual{' '}
-              {formatMoney(shippedVariance.actual)} / budget{' '}
-              {formatMoney(shippedVariance.budget)}
+              <span className="text-[var(--over)] font-semibold">
+                {shippedVariance.overCount}
+              </span>{' '}
+              over budget by{' '}
+              <span className="text-[var(--over)] font-semibold">
+                {formatMoney(shippedVariance.overSum)}
+              </span>
+              {shippedVariance.underOrPendingCount > 0 && (
+                <>
+                  {' '}·{' '}
+                  <span>{shippedVariance.underOrPendingCount}</span> under-invoiced
+                </>
+              )}
             </div>
           </div>
           <button
