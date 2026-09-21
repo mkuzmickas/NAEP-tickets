@@ -195,30 +195,49 @@ export function ShippingTrendChart({
     actual: number | null;
   } | null>(null);
 
-  // Trim inputs to the visible window so the cumulative lines only reflect
-  // the portion of the schedule inside the chart's date range.
-  const visibleForecast = useMemo(
-    () => forecast.filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF),
-    [forecast]
-  );
-  const visibleActual = useMemo(
-    () => actual.filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF),
-    [actual]
-  );
+  // Both lines share the SAME date basis (baseline_ship_date) so they can
+  // be compared like-for-like at any point on the X-axis. Previous version
+  // used planned_ship_date for one line and baseline_ship_date for another,
+  // which made the committed line run above the plan for date-alignment
+  // reasons that had nothing to do with overruns.
+  const todayIso = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  }, []);
 
-  const forecastSeries = useMemo(() => buildSeries(visibleForecast), [visibleForecast]);
-  const actualSeries = useMemo(() => buildSeries(visibleActual), [visibleActual]);
+  // Baseline plan curve: cumulative budget_total by baseline_ship_date. This
+  // is the ORIGINAL cash-flow commitment we signed up to.
+  const forecastSeries = useMemo((): Series => {
+    const raw = packages
+      .filter((p) => !!p.baseline_ship_date)
+      .map((p) => ({ date: p.baseline_ship_date as string, value: p.budget_total }))
+      .filter((p) => p.value > 0)
+      .filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const out: Series = [];
+    let cum = 0;
+    for (const p of raw) {
+      cum += p.value;
+      out.push({ date: new Date(p.date + 'T00:00:00'), cumulative: cum });
+    }
+    return out;
+  }, [packages]);
 
-  // Committed (floored) series — same floor as the pill. For every package
-  // that has an actual ship date or a past baseline, plot max(actual, budget)
-  // at the earliest of those two dates. When this line sits ABOVE the
-  // forecast line, the overrun on shipped work becomes visible — that's
-  // the gap the pill number reports. When it hugs the forecast, individual
-  // overruns are cancelling out and nothing is truly over yet.
-  const committedSeries = useMemo(() => {
+  // Committed / Actual line: cumulative max(actual, budget) placed at
+  //   • actual_ship_date if a LaPrairie ticket exists (real ship)
+  //   • baseline_ship_date if the baseline has passed but no ticket yet
+  //     (assumed at budget — floor treatment)
+  //   • excluded for packages still ahead of their baseline
+  // When this line sits ABOVE the amber plan line at the same date, the
+  // gap between them equals the pill number — the true overrun.
+  const actualSeries = useMemo((): Series => {
     const raw = packages
       .map((p) => {
-        const date = p.actual_ship_date ?? p.baseline_ship_date;
+        let date: string | null = null;
+        if (p.actual_ship_date) date = p.actual_ship_date;
+        else if (p.baseline_ship_date && p.baseline_ship_date <= todayIso)
+          date = p.baseline_ship_date;
         if (!date) return null;
         const value = Math.max(p.actual, p.budget_total);
         if (value <= 0) return null;
@@ -234,7 +253,7 @@ export function ShippingTrendChart({
       out.push({ date: new Date(p.date + 'T00:00:00'), cumulative: cum });
     }
     return out;
-  }, [packages]);
+  }, [packages, todayIso]);
 
   // Cost overrun on shipped work. For every package that either has an
   // actual ship date on file (LaPrairie ticket landed) OR whose baseline
@@ -317,8 +336,7 @@ export function ShippingTrendChart({
 
   const maxCum = Math.max(
     forecastSeries.length ? forecastSeries[forecastSeries.length - 1].cumulative : 0,
-    actualSeries.length ? actualSeries[actualSeries.length - 1].cumulative : 0,
-    committedSeries.length ? committedSeries[committedSeries.length - 1].cumulative : 0
+    actualSeries.length ? actualSeries[actualSeries.length - 1].cumulative : 0
   );
   const yMax = niceCeil(maxCum * 1.05);
   const yStep = yMax / 5;
@@ -341,7 +359,6 @@ export function ShippingTrendChart({
 
   const forecastPath = pathFor(forecastSeries);
   const actualPath = pathFor(actualSeries);
-  const committedPath = pathFor(committedSeries);
   const forecastLatest = forecastSeries[forecastSeries.length - 1] ?? null;
   const actualLatest = actualSeries[actualSeries.length - 1] ?? null;
 
@@ -388,18 +405,16 @@ export function ShippingTrendChart({
             Forecast vs Actual
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Planned (amber) vs actual invoices (green) vs committed / floored
-            (dotted red). The red line applies the same per-package floor as
-            the pill: whenever it separates upward from the amber line,
-            you're seeing real overruns. The green and amber lines can hug
-            each other while individual over- and under-invoiced packages
-            cancel out at the portfolio level.
+            Both lines share the same baseline-ship-date basis. Amber =
+            budgeted spend by baseline date. Green = actual invoices where
+            they exist, else budget as a floor for shipped packages —
+            same rule as the pill. Where green sits above amber, that gap
+            is a real overrun.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
-          <LegendSwatch color="var(--warn)" label="Planned (Budget)" dashed />
-          <LegendSwatch color="var(--under)" label="Actual (LEM)" />
-          <LegendSwatch color="var(--over)" label="Committed (floor)" dashed />
+          <LegendSwatch color="var(--warn)" label="Baseline Plan" dashed />
+          <LegendSwatch color="var(--under)" label="Committed / Actual" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
               Overrun on Shipped Work
@@ -552,19 +567,6 @@ export function ShippingTrendChart({
             />
           )}
 
-          {/* Committed / floored (dotted red) — sits above forecast when
-              per-package overruns exist, matches the pill number */}
-          {committedPath && (
-            <path
-              d={committedPath}
-              fill="none"
-              stroke="var(--over)"
-              strokeWidth={2}
-              strokeDasharray="2 3"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          )}
 
           {/* Latest markers */}
           {forecastLatest && (

@@ -59,28 +59,30 @@ function buildBuckets(packages: TrackerPackage[]): Bucket[] {
     const latestShip = baselines[baselines.length - 1] ?? null;
     const ewp = pkgs[0]?.ewp ?? '';
 
-    // A package counts as SHIPPED only when a LaPrairie ticket exists on
-    // it (actual_ship_date is not null). Baseline date passing means only
-    // that the package is *due* — not that it left the yard.
-    const shippedCount = pkgs.filter((p) => !!p.actual_ship_date).length;
-    const anyShipped = shippedCount > 0;
-    const allShipped = shippedCount === pkgs.length;
+    // Bucket-level completion rule: one LaPrairie ticket closes the whole
+    // convoy, because a single ticket usually covers a main skid + its
+    // ship-loose sub-loads (five ship-loose vessels never get their own
+    // individual invoices). If any package has an actual_ship_date and
+    // every baseline in the bucket has already passed, the bucket is
+    // complete — even if only one of the six loads has a ticket.
+    const anyShipped = pkgs.some((p) => !!p.actual_ship_date);
+    const allBaselinesPast = pkgs.every((p) => {
+      const b = p.baseline_ship_date ?? p.planned_ship_date;
+      return b !== null && b <= todayIso;
+    });
 
     let status: BucketStatus;
     if (!latestShip && !anyShipped) {
       status = 'undated';
-    } else if (allShipped) {
-      // Every package has a LaPrairie ticket. Green if every package also
-      // has a face_value logged (ticket_count > 0, which it does by
-      // construction here), amber only if the actual roll-up is $0.
+    } else if (anyShipped && allBaselinesPast) {
       status = actual > 0 ? 'complete' : 'partial_ticketed';
     } else if (anyShipped) {
-      // Some out the door, others still to go. If nothing is billed yet
-      // it's partial-ticketed; if there are actuals we're mid-shipment.
+      // Ticketed on part of the bucket but at least one baseline is still
+      // in the future — mid-convoy, not done.
       status = 'in_progress';
-    } else if (latestShip && latestShip <= todayIso) {
-      // Nothing shipped and every baseline date has passed — the bucket is
-      // overdue and no LaPrairie ticket has landed to prove otherwise.
+    } else if (allBaselinesPast) {
+      // Every baseline passed and no LaPrairie ticket landed — the bucket
+      // is genuinely overdue.
       status = 'shipped_no_tickets';
     } else {
       status = 'upcoming';
