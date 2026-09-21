@@ -12,7 +12,7 @@ import type {
   TrackerPackage,
   TrackerTicket,
 } from '@/lib/shippingTracker';
-import { computeShippingMetrics } from '@/lib/shippingTracker';
+import { computeShippingMetrics } from '@/lib/shippingMetrics';
 
 export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
   const [assignFor, setAssignFor] = useState<TrackerTicket | null>(null);

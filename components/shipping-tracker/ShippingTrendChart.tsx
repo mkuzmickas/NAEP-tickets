@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { TrendPoint, TrackerPackage } from '@/lib/shippingTracker';
-import { computeShippingMetrics } from '@/lib/shippingTracker';
+import { computeShippingMetrics } from '@/lib/shippingMetrics';
 import { bucketOf } from '@/lib/shippingBuckets';
 
 /* --------------------------------------------------------------------------
