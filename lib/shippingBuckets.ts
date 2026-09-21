@@ -26,10 +26,16 @@ export function bucketOf(tag: string): string {
   // Matches either "OPSCO ... Sales Skid" or "Sales Skid (OPSCO)".
   if (/Sales Skid.*OPSCO|OPSCO.*Sales Skid/i.test(t)) return 'OPSCO Sales Skid';
 
-  // MOD-111xx family (all North South Rack modules) into a single bucket.
-  // Runs before the general MOD-\d+ rule so MOD-11101/11102/…/11113 all
-  // land here; MOD-30701/30702/… still bucket per module below.
+  // JCI Sales Coalescer family (all Loads collapse into one bucket).
+  if (/Sales Coalescer|\bJCI\b/i.test(t)) return 'JCI Sales Coalescer';
+
+  // MOD-1xx families — each three-digit prefix rolls up into a single
+  // bucket. Runs before the generic MOD-\d+ fallback so these prefixes
+  // don't split into per-module cards.
   if (/^MOD-111\d*/i.test(t)) return 'MOD-111x';
+  if (/^MOD-307\d*/i.test(t)) return 'MOD-307x';
+  if (/^MOD-608\d*/i.test(t)) return 'MOD-608x';
+  if (/^MOD-704\d*/i.test(t)) return 'MOD-704x';
 
   const mod = t.match(/^(MOD-\d+)/);
   if (mod) return mod[1];
