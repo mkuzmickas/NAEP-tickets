@@ -370,15 +370,15 @@ export function ShippingTrendChart({
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
             Both lines share the same baseline-ship-date basis. Amber =
-            budgeted spend by baseline date. Green = actual invoices where
-            they exist, else budget as a floor for shipped packages —
-            same rule as the pill. Where green sits above amber, that gap
-            is a real overrun.
+            budgeted spend by baseline date. Green = estimated actual —
+            real invoices where they've landed, plus budget as a floor
+            for shipped packages still waiting on their invoice. Where
+            green sits above amber, that gap is a real overrun.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
-          <LegendSwatch color="var(--warn)" label="Baseline Plan" dashed />
-          <LegendSwatch color="var(--under)" label="Committed / Actual" />
+          <LegendSwatch color="var(--warn)" label="Baseline (Budget)" dashed />
+          <LegendSwatch color="var(--under)" label="Est. Actual" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
               Overrun on Shipped Work
@@ -593,7 +593,7 @@ export function ShippingTrendChart({
                     className="tabular"
                     fontWeight={600}
                   >
-                    Committed {formatMoney(hover.actual)}
+                    Est. Actual {formatMoney(hover.actual)}
                   </text>
                 )}
               </g>
