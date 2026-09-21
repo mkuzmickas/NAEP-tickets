@@ -89,20 +89,15 @@ function buildBuckets(packages: TrackerPackage[]): Bucket[] {
 
   // Sort order: upcoming first (what to watch), then in progress, then
   // shipped-no-tickets (chase invoices), then complete (done), undated last.
-  // Sort surfaces what needs action first: waiting for an invoice at the
-  // top, then the in-progress shipments, then the ones with no ship date
-  // set, then upcoming (nothing to do yet), then complete (already done).
-  const order: Record<BucketStatus, number> = {
-    shipped_no_tickets: 0,
-    partial_ticketed: 1,
-    in_progress: 2,
-    undated: 3,
-    upcoming: 4,
-    complete: 5,
-  };
+  // Pure chronological order by earliest planned ship date. Buckets with no
+  // ship date sink to the very end. This puts completed/partial/upcoming
+  // side by side in the order the work actually flows, so the timeline
+  // reads left-to-right, top-to-bottom.
   out.sort((a, b) => {
-    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
-    return (a.earliestShip ?? '9999').localeCompare(b.earliestShip ?? '9999');
+    const aKey = a.earliestShip ?? '9999-99-99';
+    const bKey = b.earliestShip ?? '9999-99-99';
+    if (aKey !== bKey) return aKey.localeCompare(bKey);
+    return a.key.localeCompare(b.key);
   });
 
   return out;
@@ -182,7 +177,7 @@ export function PackageBucketCards({ packages }: { packages: TrackerPackage[] })
     <Card>
       <CardHeader
         title="Shipping Buckets"
-        subtitle="One card per shipping system. Green = every package in the system has shipped and has at least one ticket. Amber = shipped, some tickets on file but not all packages invoiced yet. Rose = shipped with zero tickets on file. Blue = mid-shipment. Neutral = upcoming."
+        subtitle="One card per shipping system, ordered by earliest planned ship date. Green = every package shipped and has ≥1 ticket. Amber = some tickets on file, others still waiting. Rose = shipped, zero tickets. Blue = mid-shipment. Neutral = upcoming."
       />
       <div className="px-5 pt-3 flex flex-wrap items-center gap-3 text-[11px]">
         <LegendChip meta={STATUS_META.complete} n={counts.complete} />
