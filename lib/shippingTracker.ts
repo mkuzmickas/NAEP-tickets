@@ -18,6 +18,12 @@ export type TrackerPackage = {
   planned_ship_date: string | null;
   /** Earliest LaPrairie ticket date tied to this package (null if none yet). */
   actual_ship_date: string | null;
+  /** Manual override: package is confirmed at site regardless of whether
+   *  a LaPrairie ticket is tagged to it (paperwork lag, ticket landed
+   *  under a sibling package's id, vendor self-haul, etc.). When true
+   *  and the baseline has passed, the tracker treats the package as
+   *  closed. Cost math is unchanged. */
+  manually_delivered: boolean;
   actual: number;
   ticket_count: number;
   sort_order: number;
@@ -146,6 +152,7 @@ type RawPkg = {
   rts_date: string | null;
   baseline_ship_date: string | null;
   planned_ship_date: string | null;
+  manually_delivered: boolean | null;
   sort_order: number;
 };
 
@@ -179,7 +186,7 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
   const { data: pkgRows, error: pkgErr } = await supabase
     .from('schedule_packages')
     .select(
-      'id, ewp, tag, length_ft, width_ft, height_ft, weight_lbs, shipping_cost, permits_cost, total_cost, rts_date, baseline_ship_date, planned_ship_date, sort_order'
+      'id, ewp, tag, length_ft, width_ft, height_ft, weight_lbs, shipping_cost, permits_cost, total_cost, rts_date, baseline_ship_date, planned_ship_date, manually_delivered, sort_order'
     )
     .order('sort_order', { ascending: true });
   if (pkgErr) throw pkgErr;
@@ -240,6 +247,7 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
       baseline_ship_date: r.baseline_ship_date,
       planned_ship_date: r.planned_ship_date,
       actual_ship_date,
+      manually_delivered: r.manually_delivered ?? false,
       actual: tix.reduce((s, t) => s + Number(t.face_value), 0),
       ticket_count: tix.length,
       sort_order: r.sort_order,

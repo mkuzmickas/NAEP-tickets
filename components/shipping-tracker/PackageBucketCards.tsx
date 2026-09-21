@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader } from '@/components/ui/Primitives';
 import { formatMoney } from '@/lib/money';
 import { bucketOf } from '@/lib/shippingBuckets';
@@ -62,20 +63,28 @@ function buildBuckets(packages: TrackerPackage[]): Bucket[] {
     // Bucket-level completion rule: one LaPrairie ticket closes the whole
     // convoy, because a single ticket usually covers a main skid + its
     // ship-loose sub-loads (five ship-loose vessels never get their own
-    // individual invoices). If any package has an actual_ship_date and
-    // every baseline in the bucket has already passed, the bucket is
-    // complete — even if only one of the six loads has a ticket.
-    const anyShipped = pkgs.some((p) => !!p.actual_ship_date);
+    // individual invoices). manually_delivered = true is Mike's override
+    // when a package is confirmed at site but no ticket ever lands under
+    // its own id (LaPrairie tagged it under a sibling package, ticket
+    // paperwork is delayed, etc.) — treat that as shipped for status.
+    const anyShipped =
+      pkgs.some((p) => !!p.actual_ship_date) ||
+      pkgs.some((p) => p.manually_delivered);
     const allBaselinesPast = pkgs.every((p) => {
       const b = p.baseline_ship_date ?? p.planned_ship_date;
       return b !== null && b <= todayIso;
     });
+    const allDeliveredOverride = pkgs.every((p) => p.manually_delivered);
 
     let status: BucketStatus;
     if (!latestShip && !anyShipped) {
       status = 'undated';
     } else if (anyShipped && allBaselinesPast) {
-      status = actual > 0 ? 'complete' : 'partial_ticketed';
+      // If the only reason the bucket 'shipped' is the manual override,
+      // treat actual = 0 as still ticketed (Mike is asserting it's at
+      // site regardless of the invoice picture).
+      status =
+        actual > 0 || allDeliveredOverride ? 'complete' : 'partial_ticketed';
     } else if (anyShipped) {
       // Ticketed on part of the bucket but at least one baseline is still
       // in the future — mid-convoy, not done.
@@ -272,6 +281,8 @@ function BucketCard({ bucket }: { bucket: Bucket }) {
         <span className="tabular">{shipRange(bucket.earliestShip, bucket.latestShip)}</span>
       </div>
 
+      <DeliveredToggle bucket={bucket} />
+
       {bucket.packages.length > 1 && (
         <details className="mt-2">
           <summary className="text-[10px] text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]">
@@ -365,6 +376,79 @@ function StatBlock({
       <div className={`tabular text-xs font-semibold ${valueCls ?? 'text-[var(--text)]'}`}>
         {value}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Manual "at site" override. Flips manually_delivered on every package in
+ * the bucket in one shot. Fires the API calls in parallel and refreshes
+ * the tracker page once they resolve so the card status updates without a
+ * full reload.
+ */
+function DeliveredToggle({ bucket }: { bucket: Bucket }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const anyMarked = bucket.packages.some((p) => p.manually_delivered);
+  const allMarked = bucket.packages.every((p) => p.manually_delivered);
+
+  async function toggle() {
+    setError(null);
+    const nextValue = !allMarked; // if partial, sweep on; if all, sweep off
+    const results = await Promise.allSettled(
+      bucket.packages.map((p) =>
+        fetch(`/api/schedule/packages/${p.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ manually_delivered: nextValue }),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const b = await res.json().catch(() => ({}));
+            throw new Error(b.error ?? `Save failed (${res.status})`);
+          }
+        })
+      )
+    );
+    const failed = results.find((r) => r.status === 'rejected');
+    if (failed && failed.status === 'rejected') {
+      setError(String(failed.reason?.message ?? failed.reason));
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
+  return (
+    <div className="mt-2 flex items-center justify-between text-[10px]">
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={isPending}
+        className={`px-2 py-0.5 rounded border text-[9px] uppercase tracking-widest font-bold ${
+          allMarked
+            ? 'border-emerald-500 bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+            : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-2)]'
+        } disabled:opacity-60`}
+        title={
+          allMarked
+            ? 'Clear the manual "delivered" flag on every package in this bucket. Tracker will go back to reading actual LaPrairie ticket state.'
+            : 'Mark every package in this bucket as delivered to site. Bucket will close regardless of whether LaPrairie tickets are tagged.'
+        }
+      >
+        {isPending
+          ? 'Saving…'
+          : allMarked
+            ? '✓ At site (override)'
+            : anyMarked
+              ? 'Mark all at site'
+              : 'Mark at site'}
+      </button>
+      {error && (
+        <span className="text-[var(--over)] truncate ml-2" title={error}>
+          {error}
+        </span>
+      )}
     </div>
   );
 }

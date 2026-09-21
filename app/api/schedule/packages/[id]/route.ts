@@ -14,6 +14,7 @@ type PatchBody = {
   rts_date?: string | null;
   convoy_group?: string | null;
   is_rack?: boolean;
+  manually_delivered?: boolean;
 };
 
 function isValidDate(v: unknown): v is string {
@@ -112,6 +113,10 @@ export async function PATCH(
 
   if ('is_rack' in body) {
     updates.is_rack = Boolean(body.is_rack);
+  }
+
+  if ('manually_delivered' in body) {
+    updates.manually_delivered = Boolean(body.manually_delivered);
   }
 
   if (Object.keys(updates).length === 0) {
