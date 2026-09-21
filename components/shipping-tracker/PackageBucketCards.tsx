@@ -48,28 +48,40 @@ function buildBuckets(packages: TrackerPackage[]): Bucket[] {
     const budget = pkgs.reduce((s, p) => s + p.budget_total, 0);
     const actual = pkgs.reduce((s, p) => s + p.actual, 0);
     const ticketCount = pkgs.reduce((s, p) => s + p.ticket_count, 0);
-    const dates = pkgs
-      .map((p) => p.planned_ship_date)
+    // Bucket-level dates: use the baseline commitment if there is one,
+    // otherwise fall back to the current planned date. The card also
+    // shows earliest actual ship date so you can eyeball slippage.
+    const baselines = pkgs
+      .map((p) => p.baseline_ship_date ?? p.planned_ship_date)
       .filter((d): d is string => !!d)
       .sort();
-    const earliestShip = dates[0] ?? null;
-    const latestShip = dates[dates.length - 1] ?? null;
+    const earliestShip = baselines[0] ?? null;
+    const latestShip = baselines[baselines.length - 1] ?? null;
     const ewp = pkgs[0]?.ewp ?? '';
 
+    // A package counts as SHIPPED only when a LaPrairie ticket exists on
+    // it (actual_ship_date is not null). Baseline date passing means only
+    // that the package is *due* — not that it left the yard.
+    const shippedCount = pkgs.filter((p) => !!p.actual_ship_date).length;
+    const anyShipped = shippedCount > 0;
+    const allShipped = shippedCount === pkgs.length;
+
     let status: BucketStatus;
-    if (!latestShip) {
+    if (!latestShip && !anyShipped) {
       status = 'undated';
-    } else if (latestShip <= todayIso) {
-      // Every package in the bucket has a past ship date. Three cases:
-      //   • every pkg individually has ≥1 ticket → complete (green)
-      //   • some tickets exist but at least one pkg still has zero → partial
-      //   • zero tickets across the whole bucket → truly shipped-no-tickets
-      const everyPkgTicketed = pkgs.every((p) => p.ticket_count > 0);
-      if (everyPkgTicketed) status = 'complete';
-      else if (ticketCount > 0) status = 'partial_ticketed';
-      else status = 'shipped_no_tickets';
-    } else if (earliestShip && earliestShip <= todayIso) {
+    } else if (allShipped) {
+      // Every package has a LaPrairie ticket. Green if every package also
+      // has a face_value logged (ticket_count > 0, which it does by
+      // construction here), amber only if the actual roll-up is $0.
+      status = actual > 0 ? 'complete' : 'partial_ticketed';
+    } else if (anyShipped) {
+      // Some out the door, others still to go. If nothing is billed yet
+      // it's partial-ticketed; if there are actuals we're mid-shipment.
       status = 'in_progress';
+    } else if (latestShip && latestShip <= todayIso) {
+      // Nothing shipped and every baseline date has passed — the bucket is
+      // overdue and no LaPrairie ticket has landed to prove otherwise.
+      status = 'shipped_no_tickets';
     } else {
       status = 'upcoming';
     }
@@ -120,7 +132,7 @@ const STATUS_META: Record<
     dot: 'bg-amber-500',
   },
   shipped_no_tickets: {
-    label: 'Shipped · no tickets',
+    label: 'Baseline missed',
     ring: 'border-rose-400 bg-rose-50',
     chip: 'bg-rose-500 text-white',
     dot: 'bg-rose-500',
@@ -263,24 +275,74 @@ function BucketCard({ bucket }: { bucket: Bucket }) {
           <summary className="text-[10px] text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]">
             Show {bucket.packages.length} packages
           </summary>
-          <ul className="mt-1.5 space-y-0.5 text-[10px] text-[var(--text-muted)]">
-            {bucket.packages.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-2">
-                <span className="truncate">{p.tag}</span>
-                <span className="tabular whitespace-nowrap">
-                  {p.ticket_count > 0 ? (
-                    <span className="text-emerald-700 font-semibold">✓</span>
-                  ) : (
-                    <span className="text-[var(--text-muted)]/60">·</span>
-                  )}{' '}
-                  {p.planned_ship_date ? fmtShort(p.planned_ship_date) : '—'}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <table className="mt-1.5 w-full text-[10px] text-[var(--text-muted)]">
+            <thead>
+              <tr className="text-[var(--text-muted)]/70">
+                <th className="text-left font-medium pb-1">Package</th>
+                <th className="text-right font-medium pb-1 whitespace-nowrap">Baseline</th>
+                <th className="text-right font-medium pb-1 whitespace-nowrap">Actual</th>
+                <th className="text-right font-medium pb-1 whitespace-nowrap">Slip</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bucket.packages.map((p) => (
+                <PackageRow key={p.id} pkg={p} />
+              ))}
+            </tbody>
+          </table>
         </details>
       )}
     </div>
+  );
+}
+
+function daysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  const at = new Date(ay, am - 1, ad).getTime();
+  const bt = new Date(by, bm - 1, bd).getTime();
+  return Math.round((bt - at) / 86_400_000);
+}
+
+function PackageRow({ pkg }: { pkg: TrackerPackage }) {
+  const baseline = pkg.baseline_ship_date ?? pkg.planned_ship_date;
+  const actual = pkg.actual_ship_date;
+  const slip = baseline && actual ? daysBetween(baseline, actual) : null;
+  const slipCls =
+    slip === null
+      ? 'text-[var(--text-muted)]/60'
+      : slip > 0
+        ? 'text-[var(--over)] font-semibold'
+        : slip < 0
+          ? 'text-[var(--under)] font-semibold'
+          : 'text-[var(--text-muted)]';
+  const slipLabel =
+    slip === null
+      ? actual
+        ? '—'
+        : baseline && baseline < today()
+          ? 'overdue'
+          : '—'
+      : slip > 0
+        ? `+${slip}d`
+        : slip < 0
+          ? `${slip}d`
+          : 'on time';
+  return (
+    <tr className="border-t border-black/5">
+      <td className="pr-2 py-0.5 truncate max-w-[130px]" title={pkg.tag}>
+        {pkg.tag}
+      </td>
+      <td className="pr-2 py-0.5 text-right tabular whitespace-nowrap">
+        {baseline ? fmtShort(baseline) : '—'}
+      </td>
+      <td className="pr-2 py-0.5 text-right tabular whitespace-nowrap">
+        {actual ? fmtShort(actual) : <span className="text-[var(--text-muted)]/60">—</span>}
+      </td>
+      <td className={`py-0.5 text-right tabular whitespace-nowrap ${slipCls}`}>
+        {slipLabel}
+      </td>
+    </tr>
   );
 }
 

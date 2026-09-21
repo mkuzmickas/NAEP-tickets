@@ -71,6 +71,10 @@ export async function POST(req: Request) {
     weight_lbs: typeof body.weight_lbs === 'string' ? body.weight_lbs.trim() || null : null,
     rts_date,
     planned_ship_date,
+    // Seed the baseline with the same date on create — a package's original
+    // commitment is whatever it was scheduled for the day it entered the
+    // plan. Later drag-drops on the board move planned_ship_date only.
+    baseline_ship_date: planned_ship_date,
     convoy_group: typeof body.convoy_group === 'string' && body.convoy_group.trim()
       ? body.convoy_group.trim()
       : null,

@@ -12,7 +12,12 @@ export type TrackerPackage = {
   budget_permits: number;
   budget_total: number;
   rts_date: string | null;
+  /** Locked-in commitment date. Doesn't move when the schedule shifts. */
+  baseline_ship_date: string | null;
+  /** Current best-estimate ship date, dragged around on the schedule board. */
   planned_ship_date: string | null;
+  /** Earliest LaPrairie ticket date tied to this package (null if none yet). */
+  actual_ship_date: string | null;
   actual: number;
   ticket_count: number;
   sort_order: number;
@@ -66,6 +71,7 @@ type RawPkg = {
   permits_cost: string | number | null;
   total_cost: string | number | null;
   rts_date: string | null;
+  baseline_ship_date: string | null;
   planned_ship_date: string | null;
   sort_order: number;
 };
@@ -100,7 +106,7 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
   const { data: pkgRows, error: pkgErr } = await supabase
     .from('schedule_packages')
     .select(
-      'id, ewp, tag, length_ft, width_ft, height_ft, weight_lbs, shipping_cost, permits_cost, total_cost, rts_date, planned_ship_date, sort_order'
+      'id, ewp, tag, length_ft, width_ft, height_ft, weight_lbs, shipping_cost, permits_cost, total_cost, rts_date, baseline_ship_date, planned_ship_date, sort_order'
     )
     .order('sort_order', { ascending: true });
   if (pkgErr) throw pkgErr;
@@ -138,6 +144,14 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
     const permits = num(r.permits_cost);
     const total = num(r.total_cost) || shipping + permits;
     const tix = ticketRows.filter((t) => t.schedule_package_id === r.id);
+    // Actual ship date = earliest LaPrairie ticket date tied to this
+    // package. If no tickets are on file, actual_ship_date is null and
+    // the tracker knows the package hasn't rolled yet.
+    const ticketDates = tix
+      .map((t) => t.ticket_date)
+      .filter((d): d is string => !!d)
+      .sort();
+    const actual_ship_date = ticketDates.length > 0 ? ticketDates[0] : null;
     return {
       id: r.id,
       ewp: r.ewp,
@@ -150,7 +164,9 @@ export async function getShippingTrackerData(): Promise<ShippingTrackerData> {
       budget_permits: permits,
       budget_total: total,
       rts_date: r.rts_date,
+      baseline_ship_date: r.baseline_ship_date,
       planned_ship_date: r.planned_ship_date,
+      actual_ship_date,
       actual: tix.reduce((s, t) => s + Number(t.face_value), 0),
       ticket_count: tix.length,
       sort_order: r.sort_order,
