@@ -7,9 +7,10 @@ import { bucketOf } from '@/lib/shippingBuckets';
 import type { TrackerPackage } from '@/lib/shippingTracker';
 
 type BucketStatus =
-  | 'complete'            // every package's ship date passed + tickets on file
-  | 'shipped_no_tickets'  // shipped but no tickets logged yet (waiting on invoice)
-  | 'partial'             // some packages shipped, others still upcoming
+  | 'complete'            // every package shipped + every package has ≥1 ticket
+  | 'partial_ticketed'    // shipped, some tickets on file, some packages still waiting
+  | 'shipped_no_tickets'  // shipped past date, zero tickets — truly nothing invoiced
+  | 'in_progress'         // some packages shipped, others still upcoming
   | 'upcoming'            // no package has shipped yet
   | 'undated';            // no ship date set on any package
 
@@ -59,13 +60,16 @@ function buildBuckets(packages: TrackerPackage[]): Bucket[] {
     if (!latestShip) {
       status = 'undated';
     } else if (latestShip <= todayIso) {
-      // Every package in the bucket has a past ship date. Green only if
-      // tickets exist AND every dated package individually has ≥1 ticket
-      // — otherwise we're still waiting on an invoice for at least one.
+      // Every package in the bucket has a past ship date. Three cases:
+      //   • every pkg individually has ≥1 ticket → complete (green)
+      //   • some tickets exist but at least one pkg still has zero → partial
+      //   • zero tickets across the whole bucket → truly shipped-no-tickets
       const everyPkgTicketed = pkgs.every((p) => p.ticket_count > 0);
-      status = ticketCount > 0 && everyPkgTicketed ? 'complete' : 'shipped_no_tickets';
+      if (everyPkgTicketed) status = 'complete';
+      else if (ticketCount > 0) status = 'partial_ticketed';
+      else status = 'shipped_no_tickets';
     } else if (earliestShip && earliestShip <= todayIso) {
-      status = 'partial';
+      status = 'in_progress';
     } else {
       status = 'upcoming';
     }
@@ -85,12 +89,16 @@ function buildBuckets(packages: TrackerPackage[]): Bucket[] {
 
   // Sort order: upcoming first (what to watch), then in progress, then
   // shipped-no-tickets (chase invoices), then complete (done), undated last.
+  // Sort surfaces what needs action first: waiting for an invoice at the
+  // top, then the in-progress shipments, then the ones with no ship date
+  // set, then upcoming (nothing to do yet), then complete (already done).
   const order: Record<BucketStatus, number> = {
-    upcoming: 0,
-    partial: 1,
-    shipped_no_tickets: 2,
-    complete: 3,
-    undated: 4,
+    shipped_no_tickets: 0,
+    partial_ticketed: 1,
+    in_progress: 2,
+    undated: 3,
+    upcoming: 4,
+    complete: 5,
   };
   out.sort((a, b) => {
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
@@ -110,13 +118,19 @@ const STATUS_META: Record<
     chip: 'bg-emerald-600 text-white',
     dot: 'bg-emerald-500',
   },
-  shipped_no_tickets: {
-    label: 'Shipped · no tickets',
+  partial_ticketed: {
+    label: 'Partially ticketed',
     ring: 'border-amber-400 bg-amber-50',
     chip: 'bg-amber-500 text-white',
     dot: 'bg-amber-500',
   },
-  partial: {
+  shipped_no_tickets: {
+    label: 'Shipped · no tickets',
+    ring: 'border-rose-400 bg-rose-50',
+    chip: 'bg-rose-500 text-white',
+    dot: 'bg-rose-500',
+  },
+  in_progress: {
     label: 'In progress',
     ring: 'border-sky-400 bg-sky-50',
     chip: 'bg-sky-600 text-white',
@@ -153,7 +167,12 @@ export function PackageBucketCards({ packages }: { packages: TrackerPackage[] })
 
   const counts = useMemo(() => {
     const c: Record<BucketStatus, number> = {
-      complete: 0, shipped_no_tickets: 0, partial: 0, upcoming: 0, undated: 0,
+      complete: 0,
+      partial_ticketed: 0,
+      shipped_no_tickets: 0,
+      in_progress: 0,
+      upcoming: 0,
+      undated: 0,
     };
     for (const b of buckets) c[b.status] += 1;
     return c;
@@ -163,12 +182,13 @@ export function PackageBucketCards({ packages }: { packages: TrackerPackage[] })
     <Card>
       <CardHeader
         title="Shipping Buckets"
-        subtitle="Each card is one shipping system. Green = every package in the system has shipped and has at least one ticket on file. Amber = shipped but still waiting on the invoice. Blue = mid-shipment. Neutral = upcoming."
+        subtitle="One card per shipping system. Green = every package in the system has shipped and has at least one ticket. Amber = shipped, some tickets on file but not all packages invoiced yet. Rose = shipped with zero tickets on file. Blue = mid-shipment. Neutral = upcoming."
       />
       <div className="px-5 pt-3 flex flex-wrap items-center gap-3 text-[11px]">
         <LegendChip meta={STATUS_META.complete} n={counts.complete} />
+        <LegendChip meta={STATUS_META.partial_ticketed} n={counts.partial_ticketed} />
         <LegendChip meta={STATUS_META.shipped_no_tickets} n={counts.shipped_no_tickets} />
-        <LegendChip meta={STATUS_META.partial} n={counts.partial} />
+        <LegendChip meta={STATUS_META.in_progress} n={counts.in_progress} />
         <LegendChip meta={STATUS_META.upcoming} n={counts.upcoming} />
         {counts.undated > 0 && (
           <LegendChip meta={STATUS_META.undated} n={counts.undated} />
