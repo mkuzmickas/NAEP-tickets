@@ -58,12 +58,13 @@ function formatShortMoney(v: number): string {
 }
 
 /**
- * One CSV row per (Date, Package) — sorted by date ascending across the
- * whole file so oldest is on top and the sheet reads as a chronological
- * shipping log. Each row shows that package's daily numbers plus its own
- * running cumulative-up-to-this-date and running variance. Money cells are
- * formatted as $#,##0.00 strings so the file is directly presentable.
- * Tickets with no package assignment roll into an "Unassigned" bucket.
+ * One CSV row per (Date, Bucket) — packages are folded into higher-level
+ * "buckets" first (all KBZ 1 loads → "KBZ 1"; all 350A/B/C/D/E generators →
+ * "BelAir Generators"; MOD-11101 + its ship-loose subs → "MOD-11101"; etc.)
+ * so the sheet reads as one line per date per system instead of one line
+ * per physical load. Sorted globally by date ascending, oldest on top.
+ * Money cells format as $#,##0.00 strings so the file is directly
+ * presentable. Packages with no bucket rule fall back to their raw tag.
  */
 function csvCell(v: string): string {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
@@ -78,6 +79,57 @@ function money(v: number): string {
   return v < 0 ? `"-$${s}"` : `"$${s}"`;
 }
 
+/**
+ * Fold a package tag into its shipping bucket. Rules are ordered — first
+ * match wins. New tags that don't match any rule stay as their own bucket,
+ * so nothing silently disappears; add a rule here if a new family shows
+ * up and Mike wants it grouped.
+ */
+function bucketOf(tag: string): string {
+  const t = tag.trim();
+
+  // 750 bbl tanks 1..N
+  if (/^\s*750\s*bbl\s*tank/i.test(t)) return '750 bbl Tanks';
+
+  // BTEX Tanks (all pad/pier variants)
+  if (/BTEX/i.test(t)) return 'BTEX Tanks';
+
+  // KBZ MCC (before the KBZ N rule so it doesn't get pulled into "KBZ")
+  if (/^KBZ\s*MCC/i.test(t)) return 'KBZ MCC';
+
+  // KBZ 1 / KBZ 2 / KBZ 3 → separate buckets per unit
+  const kbz = t.match(/^KBZ\s*(\d+)/i);
+  if (kbz) return `KBZ ${kbz[1]}`;
+
+  // BelAir generators 350A/B/C/D/E + E House
+  if (/BelAir/i.test(t)) return 'BelAir Generators';
+
+  // MOD-11101 / MOD-11101-104 / MOD-11105/11106 → parent MOD number
+  const mod = t.match(/^(MOD-\d+)/);
+  if (mod) return mod[1];
+
+  // HP / LP Flare KO Drums
+  if (/Flare KO Drum/i.test(t)) return 'Flare KO Drums';
+
+  // Flare Stack (pieces + foundation)
+  if (/Flare Stack/i.test(t)) return 'Flare Stack';
+
+  // Fuel Gas Conditioning Skid + accessories
+  if (/Fuel Gas Conditioning/i.test(t)) return 'Fuel Gas Conditioning';
+
+  // Coolant / Lube Oil (Cado) — a bucket in its own right
+  if (/Coolant.*Lube Oil|Lube Oil/i.test(t)) return 'Coolant / Lube Oil';
+
+  // Start Air Skid family (Cado + ship-loose vessels)
+  if (/Start Air Skid/i.test(t)) return 'Start Air Skid';
+
+  // Skim/Slop Pump Building
+  if (/Skim.?Slop|Skip.?Slop/i.test(t)) return 'Skim Slop Pump';
+
+  // Fall back to the raw tag — never lose a package
+  return t;
+}
+
 function buildForecastVsActualCsv(
   forecast: TrendPoint[],
   actual: TrendPoint[]
@@ -86,66 +138,77 @@ function buildForecastVsActualCsv(
 
   type Row = {
     date: string;
-    tag: string;
+    bucket: string;
     ewp: string;
     f: number;
     a: number;
+    packages: Set<string>; // raw tags folded into this row, for the detail column
   };
 
-  // Bucket both series by (date, tag, ewp) so a package that has both a
-  // forecast and an actual on the same date produces one row, not two.
   const byKey = new Map<string, Row>();
-  const upsert = (date: string, tag: string, ewp: string, f: number, a: number) => {
-    const k = `${date}|${tag}|${ewp}`;
+  const upsert = (
+    date: string,
+    tag: string,
+    ewp: string,
+    f: number,
+    a: number
+  ) => {
+    const bucket = tag === UNASSIGNED ? UNASSIGNED : bucketOf(tag);
+    const k = `${date}|${bucket}`;
     const cur = byKey.get(k);
     if (cur) {
       cur.f += f;
       cur.a += a;
+      cur.packages.add(tag);
+      // If two packages in the same bucket disagree on EWP, first-seen wins
+      // — one bucket almost always maps to one EWP by construction.
+      if (!cur.ewp && ewp) cur.ewp = ewp;
     } else {
-      byKey.set(k, { date, tag, ewp, f, a });
+      byKey.set(k, { date, bucket, ewp, f, a, packages: new Set([tag]) });
     }
   };
   for (const p of forecast) upsert(p.date, p.package_tag ?? UNASSIGNED, p.ewp ?? '', p.value, 0);
   for (const p of actual)   upsert(p.date, p.package_tag ?? UNASSIGNED, p.ewp ?? '', 0, p.value);
 
-  // Global sort: oldest date on top; within a date, packages alphabetical.
   const rowsSorted = Array.from(byKey.values()).sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
-    return a.tag.localeCompare(b.tag);
+    return a.bucket.localeCompare(b.bucket);
   });
 
-  // Running cumulative per package as we iterate in date order — each row
-  // reflects that package's total up to and including its own date.
+  // Running cumulative per bucket as we iterate in date order.
   const cumF = new Map<string, number>();
   const cumA = new Map<string, number>();
 
   const header = [
     'Date',
-    'Package',
+    'Bucket',
     'EWP',
     'Forecast (this date)',
-    'Cumulative Forecast (package)',
+    'Cumulative Forecast (bucket)',
     'Actual (this date)',
-    'Cumulative Actual (package)',
-    'Variance-to-Date (package)',
+    'Cumulative Actual (bucket)',
+    'Variance-to-Date (bucket)',
+    'Packages (this row)',
   ].join(',');
   const out: string[] = [header];
 
   for (const r of rowsSorted) {
-    const nextF = (cumF.get(r.tag) ?? 0) + r.f;
-    const nextA = (cumA.get(r.tag) ?? 0) + r.a;
-    cumF.set(r.tag, nextF);
-    cumA.set(r.tag, nextA);
+    const nextF = (cumF.get(r.bucket) ?? 0) + r.f;
+    const nextA = (cumA.get(r.bucket) ?? 0) + r.a;
+    cumF.set(r.bucket, nextF);
+    cumA.set(r.bucket, nextA);
+    const pkgList = Array.from(r.packages).sort().join('; ');
     out.push(
       [
         r.date,
-        csvCell(r.tag),
+        csvCell(r.bucket),
         csvCell(r.ewp),
         money(r.f),
         money(nextF),
         money(r.a),
         money(nextA),
         money(nextA - nextF),
+        csvCell(pkgList),
       ].join(',')
     );
   }
