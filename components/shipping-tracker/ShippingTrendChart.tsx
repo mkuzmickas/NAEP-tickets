@@ -225,36 +225,20 @@ export function ShippingTrendChart({
     return out;
   }, [packages]);
 
-  // Committed / Actual line: cumulative max(actual, budget) placed at
-  //   • actual_ship_date if a LaPrairie ticket exists (real ship)
-  //   • baseline_ship_date if the baseline has passed but no ticket yet
-  //     (assumed at budget — floor treatment)
-  //   • excluded for packages still ahead of their baseline
-  // When this line sits ABOVE the amber plan line at the same date, the
-  // gap between them equals the pill number — the true overrun.
-  const actualSeries = useMemo((): Series => {
-    const raw = packages
-      .map((p) => {
-        let date: string | null = null;
-        if (p.actual_ship_date) date = p.actual_ship_date;
-        else if (p.baseline_ship_date && p.baseline_ship_date <= todayIso)
-          date = p.baseline_ship_date;
-        if (!date) return null;
-        const value = Math.max(p.actual, p.budget_total);
-        if (value <= 0) return null;
-        return { date, value };
-      })
-      .filter((p): p is { date: string; value: number } => p !== null)
-      .filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const out: Series = [];
-    let cum = 0;
-    for (const p of raw) {
-      cum += p.value;
-      out.push({ date: new Date(p.date + 'T00:00:00'), cumulative: cum });
-    }
-    return out;
-  }, [packages, todayIso]);
+  // Actual invoiced line: cumulative real actuals only, plotted at
+  // ticket_date (which is what the raw actual TrendPoints already carry).
+  // No budget floor — a package whose baseline has passed but no invoice
+  // has landed contributes $0, not its budget. The Realized Overrun pill
+  // catches the real overshoots on invoiced packages independently.
+  const actualSeries = useMemo(
+    () =>
+      buildSeries(
+        actual
+          .filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF)
+          .sort((a, b) => a.date.localeCompare(b.date))
+      ),
+    [actual]
+  );
 
   // Cost overrun on shipped work. For every package that either has an
   // actual ship date on file (LaPrairie ticket landed) OR whose baseline
@@ -369,19 +353,20 @@ export function ShippingTrendChart({
             Forecast vs Actual
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Both lines share the same baseline-ship-date basis. Amber =
-            budgeted spend by baseline date. Green = estimated actual —
-            real invoices where they've landed, plus budget as a floor
-            for shipped packages still waiting on their invoice. Where
-            green sits above amber, that gap is a real overrun.
+            Amber = cumulative budget by baseline ship date. Green =
+            cumulative real invoices by ticket date. When green sits
+            above amber, invoices have already exceeded plan; when it
+            sits below, invoices simply haven't caught up. The pill on
+            the right is the realized overrun — only counts packages
+            that are already invoiced above their budget.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
           <LegendSwatch color="var(--warn)" label="Baseline (Budget)" dashed />
-          <LegendSwatch color="var(--under)" label="Est. Actual" />
+          <LegendSwatch color="var(--under)" label="Actual Invoiced" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
-              Overrun on Shipped Work
+              Realized Overrun
             </div>
             <div
               className={`text-base font-semibold tabular ${
@@ -389,7 +374,7 @@ export function ShippingTrendChart({
                   ? 'text-[var(--over)]'
                   : 'text-[var(--text)]'
               }`}
-              title={`Overrun is the sum of (actual − budget) across packages where actual > budget. The remaining ${shippedVariance.underOrPendingCount} shipped package${shippedVariance.underOrPendingCount === 1 ? '' : 's'} are either genuinely under budget or still waiting on LaPrairie tickets — they contribute $0 to the overrun. Raw totals across shipped work: actual invoiced ${formatMoney(shippedVariance.shippedActual)}, budget ${formatMoney(shippedVariance.shippedBudget)}.`}
+              title={`Realized overrun = Σ (actual − budget) across every package that's actually been invoiced above its budget. Packages that shipped but haven't been invoiced yet contribute $0 — no assumption, no floor. Actual invoiced to date: ${formatMoney(shippedVariance.totalActual)}. Packages awaiting invoice: ${shippedVariance.shippedNotInvoicedCount} (budget ${formatMoney(shippedVariance.shippedNotInvoicedBudget)}).`}
             >
               {shippedVariance.overrun > 0 ? '+' : ''}
               {formatMoney(shippedVariance.overrun)}
@@ -398,14 +383,11 @@ export function ShippingTrendChart({
               <span className="text-[var(--over)] font-semibold">
                 {shippedVariance.overCount}
               </span>{' '}
-              over budget by{' '}
-              <span className="text-[var(--over)] font-semibold">
-                {formatMoney(shippedVariance.overSum)}
-              </span>
-              {shippedVariance.underOrPendingCount > 0 && (
+              invoiced over budget
+              {shippedVariance.shippedNotInvoicedCount > 0 && (
                 <>
                   {' '}·{' '}
-                  <span>{shippedVariance.underOrPendingCount}</span> under-invoiced
+                  <span>{shippedVariance.shippedNotInvoicedCount}</span> shipped, pending invoice
                 </>
               )}
             </div>

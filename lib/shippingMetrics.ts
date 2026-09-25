@@ -10,16 +10,19 @@ import type { TrackerPackage } from '@/lib/shippingTracker';
  * tiles on the tracker page and by the pill on the Est. Actual chart so
  * those two numbers can't drift.
  *
- *   isShipped(p)  = actual_ship_date is set OR baseline (or fallback
- *                    planned) date has already passed
- *   effective(p)  = max(actual, budget_total) — budget is treated as a
- *                    floor so packages waiting on LaPrairie invoices
- *                    don't fake as savings
- *   overrun       = Σ effective(p) − Σ budget_total(p)  for shipped
- *   fac           = Σ effective(p) for shipped
- *                    + Σ budget_total(p) for un-shipped
- *                    (i.e. past overruns stick, future packages assumed
- *                     to hold budget)
+ * All numbers are honest — no budget floor. If invoices haven't landed
+ * yet on a shipped package, that shows as "invoiced under" (not fake
+ * savings, but also not a fake overrun). If invoices came in over
+ * budget, that overshoot is a realized overrun and counts.
+ *
+ *   totalActual   = Σ actual across every package                  — matches vendor page's Incurred to Date
+ *   invoicedCount = # packages where actual > 0                    — packages we've actually seen billing on
+ *   overrun       = Σ max(0, actual − budget_total) across ALL     — sum of realized overshoots only
+ *                    packages where actual > 0                       (never negative — invoice lag doesn't fake savings)
+ *   shippedNotInvoicedCount / Budget = packages whose baseline
+ *                    has passed and no invoices have landed yet
+ *   fac           = totalBudget + overrun                          — assumes: past overruns stick, everything
+ *                                                                    else (shipped-not-invoiced + future) holds budget
  */
 export function computeShippingMetrics(packages: TrackerPackage[]) {
   const today = new Date();
@@ -30,12 +33,15 @@ export function computeShippingMetrics(packages: TrackerPackage[]) {
   let totalActual = 0;
   let shippedBudget = 0;
   let shippedActual = 0;
-  let shippedEffective = 0;
   let shippedPkgCount = 0;
+
+  let invoicedCount = 0;
   let overCount = 0;
   let overSum = 0;
-  let underOrPendingCount = 0;
-  let fac = 0;
+  let underCount = 0;
+  let underSum = 0;
+  let shippedNotInvoicedCount = 0;
+  let shippedNotInvoicedBudget = 0;
 
   for (const p of packages) {
     totalBudget += p.budget_total;
@@ -45,24 +51,31 @@ export function computeShippingMetrics(packages: TrackerPackage[]) {
     const dueByNow = !!baseline && baseline <= todayIso;
     const shipped = !!p.actual_ship_date;
     const isShipped = dueByNow || shipped;
-    const effective = Math.max(p.actual, p.budget_total);
 
     if (isShipped) {
       shippedBudget += p.budget_total;
       shippedActual += p.actual;
-      shippedEffective += effective;
       shippedPkgCount += 1;
-      if (p.actual > p.budget_total) {
+    }
+
+    if (p.actual > 0) {
+      invoicedCount += 1;
+      const delta = p.actual - p.budget_total;
+      if (delta > 0) {
         overCount += 1;
-        overSum += p.actual - p.budget_total;
-      } else {
-        underOrPendingCount += 1;
+        overSum += delta;
+      } else if (delta < 0) {
+        underCount += 1;
+        underSum += -delta;
       }
-      fac += effective;
-    } else {
-      fac += p.budget_total;
+    } else if (isShipped) {
+      shippedNotInvoicedCount += 1;
+      shippedNotInvoicedBudget += p.budget_total;
     }
   }
+
+  const overrun = overSum; // Σ realized overshoots only, always ≥ 0
+  const fac = totalBudget + overrun; // total budget + locked-in overruns
 
   return {
     totalBudget,
@@ -70,10 +83,14 @@ export function computeShippingMetrics(packages: TrackerPackage[]) {
     shippedBudget,
     shippedActual,
     shippedPkgCount,
+    invoicedCount,
     overCount,
     overSum,
-    underOrPendingCount,
-    overrun: shippedEffective - shippedBudget,
+    underCount,
+    underSum,
+    shippedNotInvoicedCount,
+    shippedNotInvoicedBudget,
+    overrun,
     fac,
   };
 }

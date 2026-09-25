@@ -65,25 +65,25 @@ export function ShippingTrackerView({ data }: { data: ShippingTrackerData }) {
           <StatTile
             label="Actual Invoiced"
             value={formatMoney(metrics.totalActual)}
-            sub={`across ${metrics.shippedPkgCount} shipped package${metrics.shippedPkgCount === 1 ? '' : 's'}`}
+            sub={`across ${metrics.invoicedCount} invoiced package${metrics.invoicedCount === 1 ? '' : 's'}`}
             emphasis
           />
           <StatTile
-            label="Overrun on Shipped Work"
+            label="Realized Overrun"
             value={
               (metrics.overrun > 0 ? '+' : '') + formatMoney(metrics.overrun)
             }
             sub={
               metrics.overCount === 0
-                ? 'no packages over budget yet'
-                : `${metrics.overCount} pkg${metrics.overCount === 1 ? '' : 's'} over${metrics.underOrPendingCount > 0 ? ` · ${metrics.underOrPendingCount} under-invoiced` : ''}`
+                ? 'no invoiced package over budget yet'
+                : `${metrics.overCount} pkg${metrics.overCount === 1 ? '' : 's'} over${metrics.shippedNotInvoicedCount > 0 ? ` · ${metrics.shippedNotInvoicedCount} shipped, pending invoice` : ''}`
             }
             tone={metrics.overrun > 0 ? 'over' : 'neutral'}
           />
           <StatTile
             label="Forecast at Completion"
             value={formatMoney(metrics.fac)}
-            sub={`vs ${formatMoney(metrics.totalBudget)} budget · assumes future pkgs hold`}
+            sub={`Total budget + realized overrun · everything not yet invoiced assumed at budget`}
             tone={metrics.fac > metrics.totalBudget ? 'over' : 'neutral'}
           />
           <StatTile
