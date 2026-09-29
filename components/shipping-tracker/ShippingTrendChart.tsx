@@ -240,6 +240,40 @@ export function ShippingTrendChart({
     [actual]
   );
 
+  // Cumulative realized overrun line — the pill number, plotted over time.
+  // Walks actual TrendPoints in date order; for each invoice increment the
+  // parent package's running actual and add the incremental realized
+  // overrun (max(0, after - budget) - max(0, before - budget)) to a running
+  // total. Under-budget packages contribute $0. The line's final value
+  // equals the Realized Overrun pill, so where you see it climb is when
+  // real overruns actually accrued in time.
+  const overrunSeries = useMemo((): Series => {
+    const budgetByTag = new Map<string, number>();
+    for (const p of packages) {
+      if (p.tag) budgetByTag.set(p.tag, p.budget_total);
+    }
+    const runningByTag = new Map<string, number>();
+    const sorted = actual
+      .filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const out: Series = [];
+    let cum = 0;
+    for (const p of sorted) {
+      if (!p.package_tag) continue;
+      const budget = budgetByTag.get(p.package_tag);
+      if (budget === undefined) continue;
+      const before = runningByTag.get(p.package_tag) ?? 0;
+      const after = before + p.value;
+      runningByTag.set(p.package_tag, after);
+      const delta = Math.max(0, after - budget) - Math.max(0, before - budget);
+      if (delta > 0) {
+        cum += delta;
+        out.push({ date: new Date(p.date + 'T00:00:00'), cumulative: cum });
+      }
+    }
+    return out;
+  }, [actual, packages]);
+
   // Cost overrun on shipped work. For every package that either has an
   // actual ship date on file (LaPrairie ticket landed) OR whose baseline
   // ship date has passed, add up how much the accrued LEM has exceeded
@@ -307,6 +341,7 @@ export function ShippingTrendChart({
 
   const forecastPath = pathFor(forecastSeries);
   const actualPath = pathFor(actualSeries);
+  const overrunPath = pathFor(overrunSeries);
   const forecastLatest = forecastSeries[forecastSeries.length - 1] ?? null;
   const actualLatest = actualSeries[actualSeries.length - 1] ?? null;
 
@@ -354,16 +389,18 @@ export function ShippingTrendChart({
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
             Amber = cumulative budget by baseline ship date. Green =
-            cumulative real invoices by ticket date. When green sits
-            above amber, invoices have already exceeded plan; when it
-            sits below, invoices simply haven't caught up. The pill on
-            the right is the realized overrun — only counts packages
-            that are already invoiced above their budget.
+            cumulative real invoices by ticket date. Red = cumulative
+            realized overrun — climbs each time an invoice pushes a
+            package past its budget, and ends at the pill number. The
+            amber and green lines can hug each other at the portfolio
+            level while individual packages are quietly over; the red
+            line makes those overruns visible as they happen.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
           <LegendSwatch color="var(--warn)" label="Baseline (Budget)" dashed />
           <LegendSwatch color="var(--under)" label="Actual Invoiced" />
+          <LegendSwatch color="var(--over)" label="Cum. Overrun" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
               Realized Overrun
@@ -508,6 +545,19 @@ export function ShippingTrendChart({
               fill="none"
               stroke="var(--under)"
               strokeWidth={2.2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Cumulative realized overrun (solid red) — climbs whenever
+              a package's invoices push past its budget. Ends at the pill. */}
+          {overrunPath && (
+            <path
+              d={overrunPath}
+              fill="none"
+              stroke="var(--over)"
+              strokeWidth={1.8}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
