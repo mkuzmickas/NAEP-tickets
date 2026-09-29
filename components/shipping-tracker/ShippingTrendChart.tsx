@@ -265,25 +265,62 @@ export function ShippingTrendChart({
       if (p.package_tag && p.date <= todayIso) invoicedTags.add(p.package_tag);
     }
 
-    // Remaining budget contributions, at each package's baseline ship date
-    // (or today if the baseline is already past). Sorted ascending.
-    const remaining = packages
-      .filter((p) => !invoicedTags.has(p.tag))
-      .filter((p) => !!p.baseline_ship_date && p.budget_total > 0)
-      .map((p) => {
-        const b = p.baseline_ship_date as string;
-        return { date: b < todayIso ? todayIso : b, value: p.budget_total };
-      })
+    // Remaining budget contributions. Date preference:
+    //   1. planned_ship_date if it's in the future — that's the current best
+    //      estimate of when the package will ship (and invoice soon after)
+    //   2. baseline_ship_date if it's in the future
+    //   3. otherwise (past-due, still uninvoiced) push into the future so
+    //      the line stays a curve, not a vertical wall at today. Distribute
+    //      past-due packages evenly across the next 60 days.
+    type Contribution = { date: string; value: number };
+    const past: Contribution[] = [];
+    const future: Contribution[] = [];
+    for (const p of packages) {
+      if (invoicedTags.has(p.tag)) continue;
+      if (p.budget_total <= 0) continue;
+      const preferred = p.planned_ship_date ?? p.baseline_ship_date;
+      if (!preferred) continue;
+      if (preferred >= todayIso) {
+        future.push({ date: preferred, value: p.budget_total });
+      } else {
+        past.push({ date: preferred, value: p.budget_total });
+      }
+    }
+
+    // Spread past-due uninvoiced packages evenly across the next 60 days.
+    // Preserves the total FTC amount without creating a vertical wall at
+    // today. Order past packages by their original preferred date so the
+    // oldest arrears land soonest in the spread.
+    past.sort((a, b) => a.date.localeCompare(b.date));
+    const spreadDays = 60;
+    const spread: Contribution[] = past.map((p, i) => {
+      const dayOffset = past.length > 0
+        ? Math.round((i * spreadDays) / Math.max(past.length, 1))
+        : 0;
+      const d = new Date(todayDate.getTime() + dayOffset * 86_400_000);
+      return { date: d.toISOString().slice(0, 10), value: p.value };
+    });
+
+    const remaining = [...future, ...spread]
       .filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF)
       .sort((a, b) => a.date.localeCompare(b.date));
 
     if (remaining.length === 0 && currentActual === 0) return [];
 
+    // Fold same-date contributions into one step so we don't emit multiple
+    // path points with identical X coordinates (would render as a stack of
+    // invisible vertical segments).
+    const byDate = new Map<string, number>();
+    for (const r of remaining) {
+      byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.value);
+    }
+    const dates = Array.from(byDate.keys()).sort();
+
     const out: Series = [{ date: todayDate, cumulative: currentActual }];
     let cum = currentActual;
-    for (const r of remaining) {
-      cum += r.value;
-      out.push({ date: new Date(r.date + 'T00:00:00'), cumulative: cum });
+    for (const d of dates) {
+      cum += byDate.get(d) ?? 0;
+      out.push({ date: new Date(d + 'T00:00:00'), cumulative: cum });
     }
     return out;
   }, [actual, packages]);
@@ -347,9 +384,13 @@ export function ShippingTrendChart({
 
   function pathFor(series: Series): string {
     if (series.length === 0) return '';
-    let s = `M ${xScale(series[0].date).toFixed(1)} ${yScale(0).toFixed(1)}`;
-    for (const p of series) {
-      s += ` L ${xScale(p.date).toFixed(1)} ${yScale(p.cumulative).toFixed(1)}`;
+    // Start at the series' first cumulative value, not at $0 — dropping to
+    // $0 first draws a spurious vertical spike at the anchor date (fine
+    // for series that start at zero anyway, kills the FTC line which
+    // anchors at the current cumulative actual).
+    let s = `M ${xScale(series[0].date).toFixed(1)} ${yScale(series[0].cumulative).toFixed(1)}`;
+    for (let i = 1; i < series.length; i++) {
+      s += ` L ${xScale(series[i].date).toFixed(1)} ${yScale(series[i].cumulative).toFixed(1)}`;
     }
     return s;
   }
