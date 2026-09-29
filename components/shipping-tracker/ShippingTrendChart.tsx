@@ -34,20 +34,24 @@ function buildSeries(points: TrendPoint[]): Series {
   return out;
 }
 
-// Nice-ceil with finer steps so we don't jump from $5.6M straight up to $10M.
-// Steps at 1, 1.5, 2, 3, 4, 5, 6, 8, 10 × 10^n keep the Y-axis tight to the data.
+// Nice-ceil chosen so yMax / 4 lands on a clean gridline step. Multiples of
+// 4 (4, 4.8, 6.4, 8) give tight fits for 5-gridline charts (0, X, 2X, 3X,
+// 4X) with X = yMax/4. Finer than before so 6.4M doesn't have to round up
+// to 8M just because it doesn't divide neatly by 5.
 function niceCeil(n: number): number {
   if (n <= 0) return 100_000;
   const pow = Math.pow(10, Math.floor(Math.log10(n)));
   const rel = n / pow;
   let stepMult = 1;
   if (rel <= 1) stepMult = 1;
-  else if (rel <= 1.5) stepMult = 1.5;
+  else if (rel <= 1.2) stepMult = 1.2;
+  else if (rel <= 1.6) stepMult = 1.6;
   else if (rel <= 2) stepMult = 2;
-  else if (rel <= 3) stepMult = 3;
+  else if (rel <= 2.4) stepMult = 2.4;
+  else if (rel <= 3.2) stepMult = 3.2;
   else if (rel <= 4) stepMult = 4;
-  else if (rel <= 5) stepMult = 5;
-  else if (rel <= 6) stepMult = 6;
+  else if (rel <= 4.8) stepMult = 4.8;
+  else if (rel <= 6.4) stepMult = 6.4;
   else if (rel <= 8) stepMult = 8;
   else stepMult = 10;
   return stepMult * pow;
@@ -372,8 +376,8 @@ export function ShippingTrendChart({
     actualSeries.length ? actualSeries[actualSeries.length - 1].cumulative : 0,
     ftcSeries.length ? ftcSeries[ftcSeries.length - 1].cumulative : 0
   );
-  const yMax = niceCeil(maxCum * 1.05);
-  const yStep = yMax / 5;
+  const yMax = niceCeil(maxCum * 1.02);
+  const yStep = yMax / 4;
 
   function xScale(d: Date): number {
     return PAD.left + ((d.getTime() - start.getTime()) / totalMs) * CW;
@@ -509,7 +513,7 @@ export function ShippingTrendChart({
           onMouseLeave={() => setHover(null)}
         >
           {/* Y gridlines + labels */}
-          {Array.from({ length: 6 }).map((_, i) => {
+          {Array.from({ length: 5 }).map((_, i) => {
             const v = i * yStep;
             const y = yScale(v);
             return (
