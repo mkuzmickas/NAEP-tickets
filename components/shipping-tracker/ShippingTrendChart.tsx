@@ -240,36 +240,50 @@ export function ShippingTrendChart({
     [actual]
   );
 
-  // Cumulative realized overrun line — the pill number, plotted over time.
-  // Walks actual TrendPoints in date order; for each invoice increment the
-  // parent package's running actual and add the incremental realized
-  // overrun (max(0, after - budget) - max(0, before - budget)) to a running
-  // total. Under-budget packages contribute $0. The line's final value
-  // equals the Realized Overrun pill, so where you see it climb is when
-  // real overruns actually accrued in time.
-  const overrunSeries = useMemo((): Series => {
-    const budgetByTag = new Map<string, number>();
-    for (const p of packages) {
-      if (p.tag) budgetByTag.set(p.tag, p.budget_total);
+  // Forecast-to-Complete line — extends the green actuals line forward from
+  // today with each remaining (uninvoiced) package's budget added at its
+  // baseline_ship_date. Endpoint = current cumulative actual + Σ budget of
+  // packages not yet invoiced = the Forecast at Completion KPI tile. Where
+  // this line ends ABOVE amber (baseline) at the final date, that vertical
+  // gap = the realized overrun already baked into current actuals — plus
+  // whatever's left to invoice at budget.
+  const ftcSeries = useMemo((): Series => {
+    // Anchor: where the green line ends today. If actuals lag today, the
+    // FTC starts flat from the last actual date to today, then climbs.
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    const todayIso = todayDate.toISOString().slice(0, 10);
+
+    const currentActual = actual
+      .filter((p) => p.date <= todayIso)
+      .reduce((s, p) => s + p.value, 0);
+
+    // Which packages already have at least one invoice — we won't re-book
+    // their budget again in the FTC extension.
+    const invoicedTags = new Set<string>();
+    for (const p of actual) {
+      if (p.package_tag && p.date <= todayIso) invoicedTags.add(p.package_tag);
     }
-    const runningByTag = new Map<string, number>();
-    const sorted = actual
+
+    // Remaining budget contributions, at each package's baseline ship date
+    // (or today if the baseline is already past). Sorted ascending.
+    const remaining = packages
+      .filter((p) => !invoicedTags.has(p.tag))
+      .filter((p) => !!p.baseline_ship_date && p.budget_total > 0)
+      .map((p) => {
+        const b = p.baseline_ship_date as string;
+        return { date: b < todayIso ? todayIso : b, value: p.budget_total };
+      })
       .filter((p) => new Date(p.date + 'T00:00:00') <= X_CUTOFF)
       .sort((a, b) => a.date.localeCompare(b.date));
-    const out: Series = [];
-    let cum = 0;
-    for (const p of sorted) {
-      if (!p.package_tag) continue;
-      const budget = budgetByTag.get(p.package_tag);
-      if (budget === undefined) continue;
-      const before = runningByTag.get(p.package_tag) ?? 0;
-      const after = before + p.value;
-      runningByTag.set(p.package_tag, after);
-      const delta = Math.max(0, after - budget) - Math.max(0, before - budget);
-      if (delta > 0) {
-        cum += delta;
-        out.push({ date: new Date(p.date + 'T00:00:00'), cumulative: cum });
-      }
+
+    if (remaining.length === 0 && currentActual === 0) return [];
+
+    const out: Series = [{ date: todayDate, cumulative: currentActual }];
+    let cum = currentActual;
+    for (const r of remaining) {
+      cum += r.value;
+      out.push({ date: new Date(r.date + 'T00:00:00'), cumulative: cum });
     }
     return out;
   }, [actual, packages]);
@@ -318,7 +332,8 @@ export function ShippingTrendChart({
 
   const maxCum = Math.max(
     forecastSeries.length ? forecastSeries[forecastSeries.length - 1].cumulative : 0,
-    actualSeries.length ? actualSeries[actualSeries.length - 1].cumulative : 0
+    actualSeries.length ? actualSeries[actualSeries.length - 1].cumulative : 0,
+    ftcSeries.length ? ftcSeries[ftcSeries.length - 1].cumulative : 0
   );
   const yMax = niceCeil(maxCum * 1.05);
   const yStep = yMax / 5;
@@ -341,7 +356,7 @@ export function ShippingTrendChart({
 
   const forecastPath = pathFor(forecastSeries);
   const actualPath = pathFor(actualSeries);
-  const overrunPath = pathFor(overrunSeries);
+  const ftcPath = pathFor(ftcSeries);
   const forecastLatest = forecastSeries[forecastSeries.length - 1] ?? null;
   const actualLatest = actualSeries[actualSeries.length - 1] ?? null;
 
@@ -388,19 +403,19 @@ export function ShippingTrendChart({
             Forecast vs Actual
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Amber = cumulative budget by baseline ship date. Green =
-            cumulative real invoices by ticket date. Red = cumulative
-            realized overrun — climbs each time an invoice pushes a
-            package past its budget, and ends at the pill number. The
-            amber and green lines can hug each other at the portfolio
-            level while individual packages are quietly over; the red
-            line makes those overruns visible as they happen.
+            Amber = baseline budget curve. Solid green = invoices to date.
+            Dotted green = Forecast to Complete — extends today's actuals
+            forward, booking each remaining package's budget at its
+            baseline ship date. Where dotted green ends ABOVE amber at
+            the last baseline, that vertical gap = the realized overrun
+            already baked in (packages we've invoiced over budget), even
+            if today's solid green and amber are still touching.
           </p>
         </div>
         <div className="flex items-center gap-5 text-xs">
           <LegendSwatch color="var(--warn)" label="Baseline (Budget)" dashed />
           <LegendSwatch color="var(--under)" label="Actual Invoiced" />
-          <LegendSwatch color="var(--over)" label="Cum. Overrun" />
+          <LegendSwatch color="var(--under)" label="Forecast to Complete" dashed />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
               Realized Overrun
@@ -550,16 +565,20 @@ export function ShippingTrendChart({
             />
           )}
 
-          {/* Cumulative realized overrun (solid red) — climbs whenever
-              a package's invoices push past its budget. Ends at the pill. */}
-          {overrunPath && (
+          {/* Forecast-to-Complete (dotted green) — extends actuals forward
+              with each remaining package's budget booked at its baseline
+              ship date. Endpoint = the Forecast at Completion tile. Where
+              this ends above amber = the realized overrun projected out. */}
+          {ftcPath && (
             <path
-              d={overrunPath}
+              d={ftcPath}
               fill="none"
-              stroke="var(--over)"
-              strokeWidth={1.8}
+              stroke="var(--under)"
+              strokeWidth={2}
+              strokeDasharray="2 3"
               strokeLinejoin="round"
               strokeLinecap="round"
+              opacity={0.7}
             />
           )}
 
