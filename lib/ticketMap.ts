@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { paginateQuery } from '@/lib/supabase/paginate';
 import {
   JOB_TO_PO,
   ewpForTicket,
@@ -63,24 +64,24 @@ type RawPoV2 = {
 export async function getTicketMapData(): Promise<TicketMapData> {
   const supabase = createClient();
 
-  const [posRes, ticketsRes] = await Promise.all([
+  const [posRes, rawTickets] = await Promise.all([
     supabase
       .from('service_pos')
       .select('id, po_number, vendor_display_name, scope')
       .order('po_number', { ascending: true }),
-    supabase
-      .from('tickets')
-      .select(
-        'id, po_id, ticket_number, ticket_date, face_value, approval_status, ewp_no, pdf_storage_path'
-      )
-      .neq('status', 'rejected')
-      .order('ticket_date', { ascending: true }),
+    paginateQuery<RawTicketV2>((from, to) =>
+      supabase
+        .from('tickets')
+        .select(
+          'id, po_id, ticket_number, ticket_date, face_value, approval_status, ewp_no, pdf_storage_path'
+        )
+        .neq('status', 'rejected')
+        .order('ticket_date', { ascending: true })
+        .range(from, to)
+    ),
   ]);
 
   if (posRes.error) throw posRes.error;
-  if (ticketsRes.error) throw ticketsRes.error;
-
-  const rawTickets = (ticketsRes.data ?? []) as RawTicketV2[];
 
   // po_id → po_number lookup, needed by the EWP helpers below to route
   // 2001285 tickets against the code map (which is authoritative — any

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { paginateQuery } from '@/lib/supabase/paginate';
 import {
   ewpForTicket,
   isMultipleEwpTicket,
@@ -144,14 +145,21 @@ export async function getUnapprovedData(): Promise<UnapprovedData> {
   const ticketRows = (ticketsRes.data ?? []) as RawTicket[];
 
   // Need per-PO totals for the LEM display — sum EVERY non-rejected
-  // ticket per PO (not just pending). Second small query for that.
-  const { data: allLemRows, error: lemErr } = await supabase
-    .from('tickets')
-    .select('po_id, face_value')
-    .neq('status', 'rejected');
-  if (lemErr) throw lemErr;
+  // ticket per PO (not just pending). Paginated — PostgREST caps SELECT
+  // at 1000 rows by default and total non-rejected tickets is well past
+  // that now across all vendors.
+  const allLemRows = await paginateQuery<{
+    po_id: string;
+    face_value: string | number;
+  }>((from, to) =>
+    supabase
+      .from('tickets')
+      .select('po_id, face_value')
+      .neq('status', 'rejected')
+      .range(from, to)
+  );
   const lemByPo = new Map<string, number>();
-  for (const r of (allLemRows ?? []) as { po_id: string; face_value: string | number }[]) {
+  for (const r of allLemRows) {
     lemByPo.set(
       r.po_id,
       (lemByPo.get(r.po_id) ?? 0) + Number(r.face_value)

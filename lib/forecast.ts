@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { paginateQuery } from '@/lib/supabase/paginate';
 import { computeFac, type ForecastPo } from '@/lib/forecast.shared';
 
 // Re-export the pure surface so server callers can grab the type/formula
@@ -29,10 +30,13 @@ export async function getForecastPos(): Promise<ForecastPo[]> {
       .select(
         'id, po_number, vendor_display_name, scope, committed_amount, percent_complete'
       ),
-    supabase
-      .from('tickets')
-      .select('po_id, face_value')
-      .neq('status', 'rejected'),
+    paginateQuery<{ po_id: string; face_value: string | number }>((from, to) =>
+      supabase
+        .from('tickets')
+        .select('po_id, face_value')
+        .neq('status', 'rejected')
+        .range(from, to)
+    ).then((data) => ({ data, error: null as null | { message: string } })),
   ]);
   if (posRes.error) throw posRes.error;
   if (ticketsRes.error) throw ticketsRes.error;

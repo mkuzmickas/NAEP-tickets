@@ -1,50 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
+import { paginateQuery } from '@/lib/supabase/paginate';
 import { computeFac, forecastContribution } from '@/lib/forecast';
 import {
   ewpForTicket,
   isMultipleEwpTicket,
   stripDatePrefix,
 } from '@/lib/ewp/ticket-ewp';
-
-/**
- * Paginated ticket fetch — Supabase/PostgREST silently caps SELECT responses
- * at its `max-rows` setting (defaults to 1000) and ignores client-side
- * `.limit()` requests above that. We walk the full table in 1000-row chunks
- * so no ticket drops off the end of the response once the total grows past
- * the cap.
- */
-async function fetchAllTickets(supabase: ReturnType<typeof createClient>) {
-  const CHUNK = 1000;
-  const out: Array<{
-    id: string;
-    po_id: string;
-    ticket_number: string;
-    ticket_date: string;
-    face_value: number | string;
-    status: string;
-    approval_status: string | null;
-    ewp_no: number | null;
-  }> = [];
-  let from = 0;
-  // Hard safety ceiling so a runaway loop can't melt a lambda. 100 pages ×
-  // 1000 rows = 100,000 tickets, well above any realistic project volume.
-  for (let page = 0; page < 100; page++) {
-    const { data, error } = await supabase
-      .from('tickets')
-      .select(
-        'id, po_id, ticket_number, ticket_date, face_value, status, approval_status, ewp_no'
-      )
-      .neq('status', 'rejected')
-      .order('ticket_date', { ascending: true })
-      .range(from, from + CHUNK - 1);
-    if (error) throw error;
-    const rows = (data ?? []) as typeof out;
-    out.push(...rows);
-    if (rows.length < CHUNK) break;
-    from += CHUNK;
-  }
-  return { data: out as Array<Record<string, unknown>>, error: null };
-}
 
 export type TicketBrief = {
   id: string;
@@ -153,17 +114,25 @@ function shortTicketNumber(ticketNumber: string): string {
 export async function getAllVendors(): Promise<VendorSummary[]> {
   const supabase = createClient();
 
-  const [posRes, ticketsRes] = await Promise.all([
+  const [posRes, rawTickets] = await Promise.all([
     supabase
       .from('service_pos')
       .select(
         'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, vendor_system_incurred, percent_complete'
       ),
-    fetchAllTickets(supabase),
+    paginateQuery<RawTicket>((from, to) =>
+      supabase
+        .from('tickets')
+        .select(
+          'id, po_id, ticket_number, ticket_date, face_value, status, approval_status, ewp_no'
+        )
+        .neq('status', 'rejected')
+        .order('ticket_date', { ascending: true })
+        .range(from, to)
+    ),
   ]);
 
   if (posRes.error) throw posRes.error;
-  if (ticketsRes.error) throw ticketsRes.error;
 
   // po_id → po_number so we can apply the whole-PO EWP rules and the
   // per-ticket code map at read time (same behaviour as the Ticket Map).
@@ -173,7 +142,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
   }
 
   const ticketsByPo = new Map<string, TicketBrief[]>();
-  for (const t of (ticketsRes.data ?? []) as RawTicket[]) {
+  for (const t of rawTickets) {
     const poNumber = poNumberById.get(t.po_id) ?? '';
     // 2001285 tickets read their EWP + multiple flag from the code map
     // (authoritative). Other POs trust the DB value — 2001271 was
