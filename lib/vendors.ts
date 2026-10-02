@@ -6,6 +6,46 @@ import {
   stripDatePrefix,
 } from '@/lib/ewp/ticket-ewp';
 
+/**
+ * Paginated ticket fetch — Supabase/PostgREST silently caps SELECT responses
+ * at its `max-rows` setting (defaults to 1000) and ignores client-side
+ * `.limit()` requests above that. We walk the full table in 1000-row chunks
+ * so no ticket drops off the end of the response once the total grows past
+ * the cap.
+ */
+async function fetchAllTickets(supabase: ReturnType<typeof createClient>) {
+  const CHUNK = 1000;
+  const out: Array<{
+    id: string;
+    po_id: string;
+    ticket_number: string;
+    ticket_date: string;
+    face_value: number | string;
+    status: string;
+    approval_status: string | null;
+    ewp_no: number | null;
+  }> = [];
+  let from = 0;
+  // Hard safety ceiling so a runaway loop can't melt a lambda. 100 pages ×
+  // 1000 rows = 100,000 tickets, well above any realistic project volume.
+  for (let page = 0; page < 100; page++) {
+    const { data, error } = await supabase
+      .from('tickets')
+      .select(
+        'id, po_id, ticket_number, ticket_date, face_value, status, approval_status, ewp_no'
+      )
+      .neq('status', 'rejected')
+      .order('ticket_date', { ascending: true })
+      .range(from, from + CHUNK - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as typeof out;
+    out.push(...rows);
+    if (rows.length < CHUNK) break;
+    from += CHUNK;
+  }
+  return { data: out as Array<Record<string, unknown>>, error: null };
+}
+
 export type TicketBrief = {
   id: string;
   ticket_number: string;
@@ -119,20 +159,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       .select(
         'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, vendor_system_incurred, percent_complete'
       ),
-    supabase
-      .from('tickets')
-      .select(
-        'id, po_id, ticket_number, ticket_date, face_value, status, approval_status, ewp_no'
-      )
-      .neq('status', 'rejected')
-      .order('ticket_date', { ascending: true })
-      // Supabase's PostgREST default caps SELECT at 1000 rows. Once total
-      // non-rejected tickets exceed that (we're already past it with
-      // Sureline + Energetic + Medallion + LaPrairie combined), the
-      // newest ticket_dates silently get truncated from this ASC-ordered
-      // response, which is why fresh uploads were never reaching the
-      // vendor page even though they existed in the DB.
-      .limit(50_000),
+    fetchAllTickets(supabase),
   ]);
 
   if (posRes.error) throw posRes.error;
