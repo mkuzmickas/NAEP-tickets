@@ -86,6 +86,7 @@ type RawPo = {
   project_cost_code: string | null;
   vendor_job_ref: string | null;
   committed_amount: string | number;
+  ap_invoiced_amount: string | number;
   vendor_system_incurred: string | number | null;
   percent_complete: string | number | null;
 };
@@ -118,7 +119,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     supabase
       .from('service_pos')
       .select(
-        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, vendor_system_incurred, percent_complete'
+        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, ap_invoiced_amount, vendor_system_incurred, percent_complete'
       ),
     paginateQuery<RawTicket>((from, to) =>
       supabase
@@ -183,7 +184,15 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
   for (const p of (posRes.data ?? []) as RawPo[]) {
     const tickets = ticketsByPo.get(p.id) ?? [];
     const committed = Number(p.committed_amount);
-    const lem = tickets.reduce((s, t) => s + t.face_value, 0);
+    // LEM-to-Date = tickets + ap_invoiced_amount. Vendors like Medallion
+    // only report through weekly cost reports (no individual tickets land
+    // in the portal); those actuals live in service_pos.ap_invoiced_amount
+    // and were previously invisible on the vendor card. Vendors that use
+    // field tickets (Energetic, LaPrairie, etc.) typically have
+    // ap_invoiced_amount = 0, so this is additive without double-counting.
+    const apInvoiced = Number(p.ap_invoiced_amount ?? 0) || 0;
+    const ticketLem = tickets.reduce((s, t) => s + t.face_value, 0);
+    const lem = ticketLem + apInvoiced;
     const vsi =
       p.vendor_system_incurred == null
         ? null
