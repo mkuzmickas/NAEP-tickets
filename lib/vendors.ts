@@ -125,7 +125,14 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
         'id, po_id, ticket_number, ticket_date, face_value, status, approval_status, ewp_no'
       )
       .neq('status', 'rejected')
-      .order('ticket_date', { ascending: true }),
+      .order('ticket_date', { ascending: true })
+      // Supabase's PostgREST default caps SELECT at 1000 rows. Once total
+      // non-rejected tickets exceed that (we're already past it with
+      // Sureline + Energetic + Medallion + LaPrairie combined), the
+      // newest ticket_dates silently get truncated from this ASC-ordered
+      // response, which is why fresh uploads were never reaching the
+      // vendor page even though they existed in the DB.
+      .limit(50_000),
   ]);
 
   if (posRes.error) throw posRes.error;
