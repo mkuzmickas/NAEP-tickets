@@ -184,15 +184,27 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
   for (const p of (posRes.data ?? []) as RawPo[]) {
     const tickets = ticketsByPo.get(p.id) ?? [];
     const committed = Number(p.committed_amount);
-    // LEM-to-Date = tickets + ap_invoiced_amount. Vendors like Medallion
-    // only report through weekly cost reports (no individual tickets land
-    // in the portal); those actuals live in service_pos.ap_invoiced_amount
-    // and were previously invisible on the vendor card. Vendors that use
-    // field tickets (Energetic, LaPrairie, etc.) typically have
-    // ap_invoiced_amount = 0, so this is additive without double-counting.
+    // LEM-to-Date = max(tickets_sum, ap_invoiced_amount). Vendors fall
+    // into two groups:
+    //
+    //   • Ticket-driven (Energetic, LaPrairie, Sureline, …): every LEM is
+    //     uploaded as a ticket. ap_invoiced_amount stays at 0 and the sum
+    //     of tickets is authoritative.
+    //
+    //   • Cost-report-driven (Medallion): no tickets, weekly cost reports
+    //     write the full actuals into ap_invoiced_amount. A few of these
+    //     POs still carry stale historical ticket rows from an earlier
+    //     restore snapshot — the cost report supersedes them.
+    //
+    // Max picks the authoritative number in both cases without needing a
+    // per-vendor flag: ticket-driven POs have max = tickets_sum, cost-
+    // report POs have max = ap_invoiced_amount even when stale tickets
+    // sit alongside. Only breaks if a vendor one day legitimately bills
+    // tickets *and* a separate AP invoice (retainer + T&M); at that point
+    // this logic needs revisiting.
     const apInvoiced = Number(p.ap_invoiced_amount ?? 0) || 0;
     const ticketLem = tickets.reduce((s, t) => s + t.face_value, 0);
-    const lem = ticketLem + apInvoiced;
+    const lem = Math.max(ticketLem, apInvoiced);
     const vsi =
       p.vendor_system_incurred == null
         ? null
