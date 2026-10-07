@@ -11,9 +11,15 @@ import { PrintVendorReport } from '@/components/vendors/PrintVendorReport';
 import { formatMoney, formatPct } from '@/lib/money';
 import type { PoWithTickets, TicketBrief, VendorSummary } from '@/lib/vendors';
 import { EWP_LABEL } from '@/lib/ewp/ticket-ewp';
+import { isCostReportVendor } from '@/lib/vendorFlags';
 
 export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
   const [addPoOpen, setAddPoOpen] = useState(false);
+  // Cost-report vendors (Medallion today) have no field tickets — their
+  // "N tickets · N approved" readouts are either 0 or legacy noise. Hide
+  // the ticket chip in the subtitle and drop the Approved-by-Enbridge
+  // tile for them so the dashboard only shows what the cost report drives.
+  const costReport = isCostReportVendor(vendor.slug);
   const pctUsed =
     vendor.total_committed > 0
       ? (vendor.total_lem / vendor.total_committed) * 100
@@ -41,8 +47,13 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
             subtitle={
               <>
                 {vendor.vendor_legal_name} ·{' '}
-                <span className="tabular">{vendor.po_count} PO{vendor.po_count === 1 ? '' : 's'}</span> ·{' '}
-                <span className="tabular">{vendor.ticket_count} ticket{vendor.ticket_count === 1 ? '' : 's'}</span>
+                <span className="tabular">{vendor.po_count} PO{vendor.po_count === 1 ? '' : 's'}</span>
+                {!costReport && (
+                  <>
+                    {' · '}
+                    <span className="tabular">{vendor.ticket_count} ticket{vendor.ticket_count === 1 ? '' : 's'}</span>
+                  </>
+                )}
               </>
             }
             action={
@@ -71,7 +82,7 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
 
         {addPoOpen && <AddPoDialog onClose={() => setAddPoOpen(false)} />}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className={`grid grid-cols-2 md:grid-cols-3 ${costReport ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-4`}>
           <StatTile
             label="Total Committed"
             value={formatMoney(vendor.total_committed)}
@@ -99,12 +110,14 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
                   : 'neutral'
             }
           />
-          <StatTile
-            label="Approved by Enbridge"
-            value={String(vendor.approved_count)}
-            sub={`${pctApproved}% of ${vendor.ticket_count} tickets`}
-            tone="under"
-          />
+          {!costReport && (
+            <StatTile
+              label="Approved by Enbridge"
+              value={String(vendor.approved_count)}
+              sub={`${pctApproved}% of ${vendor.ticket_count} tickets`}
+              tone="under"
+            />
+          )}
           <StatTile
             label="Value at Risk"
             value={formatMoney(vendor.total_pending_value)}

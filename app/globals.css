@@ -270,4 +270,21 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  /* ----------------------------------------------------------
+     Portrait override for cost-report vendor reports (Medallion).
+     The @page rule earlier in this file sets a global default of
+     letter landscape so the schedule prints wide; cost-report
+     vendor reports are a compact one-page summary table that
+     wants portrait. A named @page rule, applied via the CSS
+     `page` property on the wrapper, overrides the global default
+     per-element in Chrome ~85+ and modern Edge/Firefox.
+     ---------------------------------------------------------- */
+  .vendor-print-report.print-portrait {
+    page: vendor-portrait;
+  }
+  @page vendor-portrait {
+    size: letter portrait;
+    margin: 0.4in;
+  }
 }

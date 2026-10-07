@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { PoWithTickets, TicketBrief, VendorSummary } from '@/lib/vendors';
+import { isCostReportVendor } from '@/lib/vendorFlags';
 
 // Document-style vendor snapshot. Rules mirrored from the SureLine playbook:
 //   - Amber signature underline on the header (2px, once per sheet).
@@ -59,9 +60,17 @@ export function PrintVendorReport({ vendor }: { vendor: VendorSummary }) {
       ? Math.round((vendor.approved_count / vendor.ticket_count) * 100)
       : 0;
   const facDelta = vendor.total_forecast - vendor.total_committed;
+  // Cost-report vendors print as a portrait 1-page summary table — no
+  // per-PO sections, no ticket chrome. Named CSS @page rule
+  // (vendor-portrait, defined in globals.css) overrides the global
+  // landscape default when the `print-portrait` class is present.
+  const costReport = isCostReportVendor(vendor.slug);
+  const wrapperClass = costReport
+    ? 'print-only vendor-print-report print-portrait'
+    : 'print-only vendor-print-report';
 
   return (
-    <div className="print-only vendor-print-report" aria-hidden="true">
+    <div className={wrapperClass} aria-hidden="true">
       <div
         style={{
           fontFamily:
@@ -78,6 +87,7 @@ export function PrintVendorReport({ vendor }: { vendor: VendorSummary }) {
           generated={generated}
           poCount={vendor.po_count}
           ticketCount={vendor.ticket_count}
+          hideTicketCount={costReport}
         />
 
         <KpiStrip
@@ -93,6 +103,7 @@ export function PrintVendorReport({ vendor }: { vendor: VendorSummary }) {
           pctUsed={pctUsed}
           valueAtRisk={vendor.total_pending_value}
           pendingCount={vendor.pending_count}
+          hideApprovals={costReport}
         />
 
         {vendor.pos.length === 0 ? (
@@ -109,6 +120,8 @@ export function PrintVendorReport({ vendor }: { vendor: VendorSummary }) {
           >
             No POs on file for this vendor yet.
           </div>
+        ) : costReport ? (
+          <PortfolioSummaryTable pos={vendor.pos} />
         ) : (
           vendor.pos.map((po) => <PoReportSection key={po.id} po={po} />)
         )}
@@ -129,12 +142,14 @@ function ReportHeader({
   generated,
   poCount,
   ticketCount,
+  hideTicketCount,
 }: {
   vendorDisplayName: string;
   vendorLegalName: string;
   generated: string;
   poCount: number;
   ticketCount: number;
+  hideTicketCount?: boolean;
 }) {
   // Rendered as <div>, not <header>, because the schedule module's
   // @media print block globally hides <header> elements to make the
@@ -225,7 +240,9 @@ function ReportHeader({
             { label: 'Generated', value: generated },
             {
               label: 'Portfolio',
-              value: `${poCount} PO${poCount === 1 ? '' : 's'} · ${ticketCount} ticket${ticketCount === 1 ? '' : 's'}`,
+              value: hideTicketCount
+                ? `${poCount} PO${poCount === 1 ? '' : 's'}`
+                : `${poCount} PO${poCount === 1 ? '' : 's'} · ${ticketCount} ticket${ticketCount === 1 ? '' : 's'}`,
             },
             { label: 'Project', value: '30006386' },
           ]}
@@ -288,6 +305,7 @@ function KpiStrip({
   pctUsed,
   valueAtRisk,
   pendingCount,
+  hideApprovals,
 }: {
   totalCommitted: number;
   totalLem: number;
@@ -301,14 +319,16 @@ function KpiStrip({
   pctUsed: number;
   valueAtRisk: number;
   pendingCount: number;
+  hideApprovals?: boolean;
 }) {
   const facTone =
     facDelta > 0.5 ? OVER : facDelta < -0.5 ? UNDER : INK;
+  const cols = hideApprovals ? 4 : 5;
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
         gap: 8,
         marginBottom: 18,
       }}
@@ -334,12 +354,14 @@ function KpiStrip({
         }
         valueColor={facTone}
       />
-      <KpiCell
-        label="Approved by Enbridge"
-        value={String(approvedCount)}
-        sub={`${pctApproved}% of ${ticketCount} tickets`}
-        valueColor={UNDER}
-      />
+      {!hideApprovals && (
+        <KpiCell
+          label="Approved by Enbridge"
+          value={String(approvedCount)}
+          sub={`${pctApproved}% of ${ticketCount} tickets`}
+          valueColor={UNDER}
+        />
+      )}
       <KpiCell
         label="Value at Risk"
         value={formatMoney(valueAtRisk)}
@@ -409,6 +431,189 @@ function KpiCell({
         {sub}
       </div>
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Portfolio summary table — portrait, one row per PO, fits 15+ POs on one page
+// Used for cost-report vendors (Medallion) where per-PO ticket chrome is noise.
+// -----------------------------------------------------------------------------
+
+function PortfolioSummaryTable({ pos }: { pos: PoWithTickets[] }) {
+  // Sort by committed descending so the largest commitments read first —
+  // same instinct as the on-screen VendorDetail list order.
+  const sorted = [...pos].sort((a, b) => b.committed - a.committed);
+  const totals = sorted.reduce(
+    (acc, p) => {
+      acc.committed += p.committed;
+      acc.lem += p.lem;
+      return acc;
+    },
+    { committed: 0, lem: 0 }
+  );
+  const totalRemaining = totals.committed - totals.lem;
+  const totalBurn =
+    totals.committed > 0 ? (totals.lem / totals.committed) * 100 : 0;
+
+  const th: React.CSSProperties = {
+    fontSize: 7,
+    textTransform: 'uppercase',
+    letterSpacing: '0.11em',
+    fontWeight: 700,
+    color: INK_MUTED,
+    textAlign: 'left',
+    padding: '6px 6px',
+    borderBottom: `1.5px solid ${AMBER_700}`,
+    whiteSpace: 'nowrap',
+  };
+  const thRight: React.CSSProperties = { ...th, textAlign: 'right' };
+  const td: React.CSSProperties = {
+    fontSize: 9,
+    padding: '5px 6px',
+    borderBottom: `1px solid ${RULE_SOFT}`,
+    verticalAlign: 'top',
+    color: INK,
+  };
+  const tdNum: React.CSSProperties = {
+    ...td,
+    textAlign: 'right',
+    fontVariantNumeric: 'tabular-nums',
+    whiteSpace: 'nowrap',
+  };
+  const tdMono: React.CSSProperties = {
+    ...td,
+    fontFamily: 'ui-monospace, "Cascadia Code", monospace',
+    fontSize: 8.5,
+    color: AMBER_700,
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+  };
+
+  return (
+    <section style={{ marginTop: 6 }}>
+      <table
+        style={{
+          width: '100%',
+          borderCollapse: 'collapse',
+          tableLayout: 'fixed',
+        }}
+      >
+        <colgroup>
+          <col style={{ width: '19%' }} />
+          <col />
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '8%' }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={th}>PO Number</th>
+            <th style={th}>Scope</th>
+            <th style={thRight}>Committed</th>
+            <th style={thRight}>LEM-to-Date</th>
+            <th style={thRight}>Remaining</th>
+            <th style={thRight}>Burn</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((po) => {
+            const remaining = po.committed - po.lem;
+            const burn =
+              po.committed > 0 ? (po.lem / po.committed) * 100 : 0;
+            const over = remaining < -0.5;
+            return (
+              <tr key={po.id}>
+                <td style={tdMono}>{po.po_number}</td>
+                <td style={{ ...td, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {po.scope ?? '—'}
+                </td>
+                <td style={tdNum}>{formatMoney(po.committed)}</td>
+                <td style={tdNum}>{formatMoney(po.lem)}</td>
+                <td style={{ ...tdNum, color: over ? OVER : INK, fontWeight: over ? 600 : 400 }}>
+                  {formatMoney(remaining)}
+                </td>
+                <td style={{ ...tdNum, color: burn > 100 ? OVER : burn > 80 ? AMBER_700 : INK_MUTED, fontWeight: 600 }}>
+                  {po.committed > 0 ? `${burn.toFixed(1)}%` : '—'}
+                </td>
+              </tr>
+            );
+          })}
+          {/* Totals row */}
+          <tr>
+            <td
+              colSpan={2}
+              style={{
+                ...td,
+                borderTop: `1.5px solid ${INK}`,
+                borderBottom: `1.5px solid ${INK}`,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                fontSize: 8,
+                color: INK,
+              }}
+            >
+              Portfolio Totals
+            </td>
+            <td
+              style={{
+                ...tdNum,
+                borderTop: `1.5px solid ${INK}`,
+                borderBottom: `1.5px solid ${INK}`,
+                fontWeight: 700,
+              }}
+            >
+              {formatMoney(totals.committed)}
+            </td>
+            <td
+              style={{
+                ...tdNum,
+                borderTop: `1.5px solid ${INK}`,
+                borderBottom: `1.5px solid ${INK}`,
+                fontWeight: 700,
+              }}
+            >
+              {formatMoney(totals.lem)}
+            </td>
+            <td
+              style={{
+                ...tdNum,
+                borderTop: `1.5px solid ${INK}`,
+                borderBottom: `1.5px solid ${INK}`,
+                fontWeight: 700,
+                color: totalRemaining < -0.5 ? OVER : INK,
+              }}
+            >
+              {formatMoney(totalRemaining)}
+            </td>
+            <td
+              style={{
+                ...tdNum,
+                borderTop: `1.5px solid ${INK}`,
+                borderBottom: `1.5px solid ${INK}`,
+                fontWeight: 700,
+                color: totalBurn > 100 ? OVER : totalBurn > 80 ? AMBER_700 : INK,
+              }}
+            >
+              {`${totalBurn.toFixed(1)}%`}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p
+        style={{
+          margin: '8px 0 0',
+          fontSize: 7.5,
+          color: INK_MUTED,
+          fontStyle: 'italic',
+        }}
+      >
+        LEM-to-Date values reflect the latest Medallion cost report
+        (TOTAL AGAINST PO VALUE line). Vendors on a cost-report workflow do not
+        log individual field tickets to this portal.
+      </p>
+    </section>
   );
 }
 
