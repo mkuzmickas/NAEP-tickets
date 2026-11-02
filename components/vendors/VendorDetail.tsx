@@ -82,6 +82,37 @@ export function VendorDetail({ vendor }: { vendor: VendorSummary }) {
 
         {addPoOpen && <AddPoDialog onClose={() => setAddPoOpen(false)} />}
 
+        {/* Baseline / Revised Budget row — only renders for vendors whose
+            POs are managed on a baseline + revised model (Sureline today).
+            Both totals are driven from the vendor's own portal and
+            refreshed weekly via SQL. Hidden for every other vendor so
+            the existing KPI row stays unchanged for them. */}
+        {vendor.total_revised_budget != null && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatTile
+              label="Baseline Budget"
+              value={formatMoney(vendor.total_baseline_budget ?? 0)}
+              sub="From Rev.0 EWP estimates"
+            />
+            <StatTile
+              label="Revised Budget"
+              value={formatMoney(vendor.total_revised_budget)}
+              sub={`Baseline + ${formatMoney(vendor.total_revised_budget - (vendor.total_baseline_budget ?? 0))} approved COs & trends`}
+              emphasis
+            />
+            <StatTile
+              label="Incurred to Date"
+              value={formatMoney(vendor.total_lem)}
+              sub={
+                vendor.total_revised_budget > 0
+                  ? `${((vendor.total_lem / vendor.total_revised_budget) * 100).toFixed(1)}% of revised`
+                  : '—'
+              }
+              tone="under"
+            />
+          </div>
+        )}
+
         <div className={`grid grid-cols-2 md:grid-cols-3 ${costReport ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-4`}>
           <StatTile
             label="Total Committed"

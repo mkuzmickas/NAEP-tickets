@@ -35,6 +35,14 @@ export type PoWithTickets = {
   vendor_job_ref: string | null;
   committed: number;
   lem: number;
+  /** Baseline budget from the vendor's Rev.0 EWP estimates. Null when
+   *  the vendor isn't managed on a baseline/revised model (every vendor
+   *  except Sureline today). */
+  baseline_budget: number | null;
+  /** Baseline + approved COs + approved trends. Null for vendors not on
+   *  the baseline/revised model. Driven from the vendor's own portal and
+   *  refreshed weekly via SQL. */
+  revised_budget: number | null;
   vendor_system_incurred: number | null;
   vendor_gap: number | null;
   percent_complete: number | null;
@@ -66,6 +74,13 @@ export type VendorSummary = {
   total_forecast: number;
   /** Number of POs on this vendor with a real forecast (percent_complete > 0). */
   forecasted_po_count: number;
+  /** Σ baseline_budget across POs that have it set. Null when no PO on
+   *  this vendor is on the baseline/revised model — the vendor-page UI
+   *  uses that to decide whether to render the Baseline / Revised tiles. */
+  total_baseline_budget: number | null;
+  /** Σ revised_budget across POs that have it set. Null for vendors not
+   *  on the baseline/revised model. */
+  total_revised_budget: number | null;
   last_ticket_date: string | null;
   pos: PoWithTickets[];
 };
@@ -87,6 +102,8 @@ type RawPo = {
   vendor_job_ref: string | null;
   committed_amount: string | number;
   ap_invoiced_amount: string | number;
+  baseline_budget: string | number | null;
+  revised_budget: string | number | null;
   vendor_system_incurred: string | number | null;
   percent_complete: string | number | null;
 };
@@ -119,7 +136,7 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     supabase
       .from('service_pos')
       .select(
-        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, ap_invoiced_amount, vendor_system_incurred, percent_complete'
+        'id, po_number, vendor_display_name, vendor_legal_name, scope, project_cost_code, vendor_job_ref, committed_amount, ap_invoiced_amount, baseline_budget, revised_budget, vendor_system_incurred, percent_complete'
       ),
     paginateQuery<RawTicket>((from, to) =>
       supabase
@@ -215,6 +232,11 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       p.percent_complete == null ? null : Number(p.percent_complete);
     const forecast = computeFac(lem, pct);
 
+    const baseline =
+      p.baseline_budget == null ? null : Number(p.baseline_budget);
+    const revised =
+      p.revised_budget == null ? null : Number(p.revised_budget);
+
     const po: PoWithTickets = {
       id: p.id,
       po_number: p.po_number,
@@ -223,6 +245,8 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
       vendor_job_ref: p.vendor_job_ref,
       committed,
       lem,
+      baseline_budget: baseline,
+      revised_budget: revised,
       vendor_system_incurred: vsi,
       vendor_gap: gap,
       percent_complete: pct,
@@ -247,6 +271,8 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
         pending_count: 0,
         total_forecast: 0,
         forecasted_po_count: 0,
+        total_baseline_budget: null,
+        total_revised_budget: null,
         last_ticket_date: null,
         pos: [],
       };
@@ -257,6 +283,16 @@ export async function getAllVendors(): Promise<VendorSummary[]> {
     v.total_lem += lem;
     v.total_forecast += forecastContribution({ committed, lem, fac: forecast });
     if (forecast != null) v.forecasted_po_count++;
+    // Baseline / revised stay null for vendors whose POs have no values —
+    // promote the running total out of null the first time we see one, so
+    // the vendor-page UI can key off null to decide whether to render
+    // the two extra KPI tiles at all.
+    if (baseline != null) {
+      v.total_baseline_budget = (v.total_baseline_budget ?? 0) + baseline;
+    }
+    if (revised != null) {
+      v.total_revised_budget = (v.total_revised_budget ?? 0) + revised;
+    }
     v.ticket_count += tickets.length;
     v.approved_count += tickets.filter((t) => t.status === 'invoiced').length;
     v.pending_count += tickets.filter((t) => t.status === 'pending').length;
