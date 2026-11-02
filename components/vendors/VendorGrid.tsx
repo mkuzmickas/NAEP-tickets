@@ -217,6 +217,20 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
           <div className="text-[22px] font-semibold tabular tracking-tight leading-tight mt-1 text-[var(--text)]">
             {formatMoney(vendor.total_committed)}
           </div>
+          {/* Revised budget readout — appears for vendors managed on the
+              baseline/revised model (Sureline today). Hidden for every
+              other vendor so their card is visually unchanged. */}
+          {vendor.total_revised_budget != null && (
+            <div
+              className="text-[11px] tabular text-[var(--text-muted)] mt-0.5"
+              title="Baseline budget plus approved change orders and approved trends from the vendor's own portal"
+            >
+              Revised{' '}
+              <span className="font-semibold text-[var(--text)]">
+                {formatMoney(vendor.total_revised_budget)}
+              </span>
+            </div>
+          )}
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] font-semibold">
@@ -226,7 +240,12 @@ function VendorCard({ vendor }: { vendor: VendorSummary }) {
             {formatMoney(vendor.total_lem)}
           </div>
           <div className="text-[11px] tabular text-[var(--text-muted)] mt-0.5">
-            {pctUsed.toFixed(1)}% of committed
+            {/* Switch the % denominator to Revised when it's available —
+                matches how the vendor's own portal reports burn. */}
+            {vendor.total_revised_budget != null &&
+            vendor.total_revised_budget > 0
+              ? `${((vendor.total_lem / vendor.total_revised_budget) * 100).toFixed(1)}% of revised`
+              : `${pctUsed.toFixed(1)}% of committed`}
           </div>
         </div>
       </div>
